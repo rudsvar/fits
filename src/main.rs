@@ -4,7 +4,7 @@ use std::{
     sync::OnceLock,
 };
 
-use tracing_subscriber::{filter::Directive, EnvFilter};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Value {
