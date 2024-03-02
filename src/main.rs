@@ -4,6 +4,8 @@ use std::{
     sync::OnceLock,
 };
 
+use tracing_subscriber::{filter::Directive, EnvFilter};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Value {
     Bool(bool),
@@ -169,7 +171,7 @@ impl Env {
     }
 }
 
-#[tracing::instrument(skip(env), ret)]
+#[tracing::instrument(skip_all, ret)]
 pub fn eval(expr: Expr, env: &Env) -> Result<Value, Error> {
     Ok(match expr {
         Expr::Bool(b) => Value::Bool(b),
@@ -218,7 +220,7 @@ pub fn eval(expr: Expr, env: &Env) -> Result<Value, Error> {
             };
             tracing::info!("{f_name} is a function");
             // Prepare function env
-            let mut fun_env = Env::default();
+            let mut fun_env = filtered_env(env);
             for ((param_name, param_ty_name), arg) in f.params.into_iter().zip(args) {
                 let Value::Type(param_ty) = env.get(&param_ty_name)?.1 else {
                     return Err(Error::Custom(format!("{param_ty_name} is not a type")));
@@ -232,6 +234,23 @@ pub fn eval(expr: Expr, env: &Env) -> Result<Value, Error> {
             eval(*f.body, &fun_env)?
         }
     })
+}
+
+fn filtered_env(env: &Env) -> Env {
+    let mut filtered_env = HashMap::new();
+    for (k, v) in &env.env {
+        // Keep type and function definitions
+        match &v.0 {
+            Type::Type => {
+                filtered_env.insert(k.clone(), v.clone());
+            }
+            Type::Fun(_, _) => {
+                filtered_env.insert(k.clone(), v.clone());
+            }
+            _ => {}
+        };
+    }
+    Env { env: filtered_env }
 }
 
 fn type_of(expr: &Expr, env: &Env) -> Result<Type, Error> {
@@ -390,7 +409,7 @@ fn assert_type(expected: &Type, actual: &Type) -> Result<(), Error> {
     }
 }
 
-#[tracing::instrument(skip(env), ret)]
+#[tracing::instrument(skip_all, ret)]
 pub fn step(stmt: Stmt, env: &mut Env) -> Result<(), Error> {
     match stmt {
         // If specified, `e` must satisfy type `ty`.
@@ -434,7 +453,12 @@ fn exec(stmts: Vec<Stmt>, env: &mut Env) -> Result<(), Error> {
 
 fn init_logging() {
     static LOGGING: OnceLock<()> = OnceLock::new();
-    LOGGING.get_or_init(|| tracing_subscriber::fmt().with_writer(stderr).init());
+    LOGGING.get_or_init(|| {
+        tracing_subscriber::fmt()
+            .with_writer(stderr)
+            .with_env_filter(EnvFilter::from_default_env())
+            .init()
+    });
 }
 
 fn main() {
