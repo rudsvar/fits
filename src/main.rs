@@ -28,23 +28,40 @@ impl<T> Default for Record<T> {
 impl<T: Clone> Record<T> {
     pub fn put(&mut self, field: String, value: T) -> Result<(), Error> {
         if self.fields.contains_key(&field) {
-            return Err(Error::AlreadyDefined(field));
+            return Err(Error::DuplicateField(field));
         }
         self.fields.insert(field, value);
         Ok(())
     }
+
     pub fn get(&self, field: &str) -> Result<T, Error> {
         self.fields
             .get(field)
             .cloned()
             .ok_or_else(|| Error::NoSuchField(field.to_string()))
     }
-    pub fn map<U: PartialEq, F: Fn(T) -> U>(self, f: F) -> Record<U> {
+}
+
+impl<T> Record<T> {
+    pub fn map<U: PartialEq, F: Fn(&T) -> U>(&self, f: F) -> Record<U> {
         let mut fields = BTreeMap::default();
-        for (k, v) in self.fields {
-            fields.insert(k, f(v));
+        for (k, v) in &self.fields {
+            fields.insert(k.clone(), f(v));
         }
         Record { fields }
+    }
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &T)> {
+        self.fields.iter()
+    }
+}
+
+impl<T, E> Record<Result<T, E>> {
+    fn transpose(self) -> Result<Record<T>, E> {
+        let mut fields = BTreeMap::default();
+        for (f, v) in self.fields {
+            fields.insert(f, v?);
+        }
+        Ok(Record { fields })
     }
 }
 
@@ -62,7 +79,7 @@ pub enum Type {
     Int,
     String,
     Type,
-    Custom { fields: HashMap<String, Type> },
+    Record(Record<Type>),
 }
 
 #[derive(Debug)]
@@ -74,7 +91,7 @@ pub enum Stmt {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
-    AlreadyDefined(String),
+    DuplicateField(String),
     NotDefined(String),
     NotType(String),
     NoFields(String),
@@ -102,7 +119,7 @@ impl Default for Env {
 impl Env {
     fn put(&mut self, name: String, ty: Type, v: Value) -> Result<(), Error> {
         if self.env.contains_key(&name) {
-            return Err(Error::AlreadyDefined(name));
+            return Err(Error::DuplicateField(name));
         }
         self.env.insert(name, (ty, v));
         Ok(())
@@ -142,12 +159,8 @@ fn type_of(expr: &Expr, env: &Env) -> Result<Type, Error> {
         Expr::Int(_) => Type::Int,
         Expr::String(_) => Type::String,
         Expr::Record(r) => {
-            let mut fields = HashMap::new();
-            for f in &r.fields {
-                let f_ty = type_of(&f.1, env)?;
-                fields.insert(f.0.clone(), f_ty);
-            }
-            Type::Custom { fields }
+            let r = r.map(|e| type_of(e, env)).transpose()?;
+            Type::Record(r)
         }
         Expr::Var(v) => env.get(v)?.0,
         Expr::FieldAccess(e, f) => {
@@ -155,13 +168,7 @@ fn type_of(expr: &Expr, env: &Env) -> Result<Type, Error> {
             let e_ty = type_of(e, env)?;
             match e_ty {
                 // Must be a custom type to have fields
-                Type::Custom { fields } => {
-                    // Get type of the field we're accessing
-                    fields
-                        .get(f)
-                        .cloned()
-                        .ok_or_else(|| Error::NoSuchField(f.to_string()))?
-                }
+                Type::Record(r) => r.get(f)?,
                 _ => Err(Error::NoFields(f.to_string()))?,
             }
         }
@@ -171,26 +178,21 @@ fn type_of(expr: &Expr, env: &Env) -> Result<Type, Error> {
 
 fn satisfies_type(expected: &Type, actual: &Type) -> Result<(), Error> {
     match (expected, actual) {
-        (
-            Type::Custom {
-                fields: expected_fields,
-            },
-            Type::Custom {
-                fields: actual_fields,
-            },
-        ) => {
-            for (expected_f, expected_f_ty) in expected_fields.iter() {
-                let actual_f_ty =
-                    actual_fields
-                        .get(expected_f)
-                        .ok_or_else(|| Error::TypeError {
-                            expected: expected.clone(),
-                            actual: actual.clone(),
-                        })?;
-                satisfies_type(expected_f_ty, actual_f_ty)?;
+        // If record, we just need the required fields
+        (a @ Type::Record(expected), b @ Type::Record(actual)) => {
+            for (expected_f, expected_f_ty) in expected.iter() {
+                // If a field isn't there, the type isn't satisfied
+                let Ok(actual_f_ty) = actual.get(expected_f) else {
+                    return Err(Error::TypeError {
+                        expected: a.clone(),
+                        actual: b.clone(),
+                    });
+                };
+                satisfies_type(expected_f_ty, &actual_f_ty)?;
             }
             Ok(())
         }
+        // Otherwise, type must be equal
         (expected, actual) => {
             if expected == actual {
                 Ok(())
@@ -249,14 +251,14 @@ fn main() {
     let program = vec![
         Stmt::TypeDef(
             "Foo".to_string(),
-            Type::Custom {
+            Type::Record(Record {
                 fields: {
-                    let mut fields = HashMap::new();
+                    let mut fields = BTreeMap::new();
                     fields.insert("i".to_string(), Type::Int);
                     fields.insert("s".to_string(), Type::String);
                     fields
                 },
-            },
+            }),
         ),
         Stmt::VarDecl(
             "foo".to_string(),
@@ -353,14 +355,14 @@ mod tests {
         let program = vec![
             Stmt::TypeDef(
                 "Foo".to_string(),
-                Type::Custom {
+                Type::Record(Record {
                     fields: {
-                        let mut fields = HashMap::new();
+                        let mut fields = BTreeMap::new();
                         fields.insert("i".to_string(), Type::Int);
                         fields.insert("s".to_string(), Type::String);
                         fields
                     },
-                },
+                }),
             ),
             Stmt::VarDecl(
                 "foo".to_string(),
@@ -387,14 +389,14 @@ mod tests {
         let program = vec![
             Stmt::TypeDef(
                 "Foo".to_string(),
-                Type::Custom {
+                Type::Record(Record {
                     fields: {
-                        let mut fields = HashMap::new();
+                        let mut fields = BTreeMap::new();
                         fields.insert("i".to_string(), Type::Int);
                         fields.insert("s".to_string(), Type::String);
                         fields
                     },
-                },
+                }),
             ),
             Stmt::VarDecl(
                 "foo".to_string(),
@@ -436,14 +438,14 @@ mod tests {
         let program = vec![
             Stmt::TypeDef(
                 "Foo".to_string(),
-                Type::Custom {
+                Type::Record(Record {
                     fields: {
-                        let mut fields = HashMap::new();
+                        let mut fields = BTreeMap::new();
                         fields.insert("i".to_string(), Type::Int);
                         fields.insert("s".to_string(), Type::String);
                         fields
                     },
-                },
+                }),
             ),
             Stmt::VarDecl(
                 "foo".to_string(),
@@ -453,17 +455,17 @@ mod tests {
                 }),
             ),
         ];
-        let expected = Type::Custom {
+        let expected = Type::Record(Record {
             fields: [
                 ("i".to_string(), Type::Int),
                 ("s".to_string(), Type::String),
             ]
             .into_iter()
             .collect(),
-        };
-        let actual = Type::Custom {
+        });
+        let actual = Type::Record(Record {
             fields: [("i".to_string(), Type::Int)].into_iter().collect(),
-        };
+        });
         assert_eq!(
             Err(Error::TypeError { expected, actual }),
             exec(program, &mut Env::default())
