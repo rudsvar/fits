@@ -4,43 +4,48 @@ use std::{
     sync::OnceLock,
 };
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Fields {
-    fields: BTreeMap<String, Value>,
-}
-
-impl Fields {
-    pub fn put(&mut self, field: String, v: Value) -> Result<(), Error> {
-        if self.fields.contains_key(&field) {
-            return Err(Error::AlreadyDefined(field));
-        }
-        self.fields.insert(field, v);
-        Ok(())
-    }
-    pub fn get(&self, field: &str) -> Result<Value, Error> {
-        self.fields
-            .get(field)
-            .cloned()
-            .ok_or_else(|| Error::NoSuchField(field.to_string()))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Object {
-    fields: Fields,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Value {
     Int(i128),
     String(String),
     Type(Type),
-    Object(Object),
+    Record(Record<Value>),
 }
 
-#[derive(Debug)]
-pub struct Record {
-    fields: Vec<(String, Expr)>,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Record<T> {
+    fields: BTreeMap<String, T>,
+}
+
+impl<T> Default for Record<T> {
+    fn default() -> Self {
+        Self {
+            fields: BTreeMap::default(),
+        }
+    }
+}
+
+impl<T: Clone> Record<T> {
+    pub fn put(&mut self, field: String, value: T) -> Result<(), Error> {
+        if self.fields.contains_key(&field) {
+            return Err(Error::AlreadyDefined(field));
+        }
+        self.fields.insert(field, value);
+        Ok(())
+    }
+    pub fn get(&self, field: &str) -> Result<T, Error> {
+        self.fields
+            .get(field)
+            .cloned()
+            .ok_or_else(|| Error::NoSuchField(field.to_string()))
+    }
+    pub fn map<U: PartialEq, F: Fn(T) -> U>(self, f: F) -> Record<U> {
+        let mut fields = BTreeMap::default();
+        for (k, v) in self.fields {
+            fields.insert(k, f(v));
+        }
+        Record { fields }
+    }
 }
 
 #[derive(Debug)]
@@ -48,7 +53,7 @@ pub enum Expr {
     Int(i128),
     String(String),
     Var(String),
-    Record(Record),
+    Record(Record<Expr>),
     FieldAccess(Box<Expr>, String),
 }
 
@@ -118,15 +123,15 @@ pub fn eval(expr: Expr, env: &Env) -> Result<Value, Error> {
         Expr::String(s) => Value::String(s),
         Expr::Var(v) => env.get(&v)?.1,
         Expr::Record(r) => {
-            let mut fields = Fields::default();
-            for f in r.fields {
-                let v = eval(f.1, env)?;
-                fields.put(f.0, v)?;
+            let mut record = Record::default();
+            for (f, e) in r.fields {
+                let v = eval(e, env)?;
+                record.put(f, v)?;
             }
-            Value::Object(Object { fields })
+            Value::Record(record)
         }
         Expr::FieldAccess(e, field) => match eval(*e, env)? {
-            Value::Object(o) => o.fields.get(&field)?,
+            Value::Record(r) => r.get(&field)?,
             _ => Err(Error::NoFields(field))?,
         },
     })
@@ -220,7 +225,7 @@ pub fn step(stmt: Stmt, env: &mut Env) -> Result<(), Error> {
             Value::Int(i) => println!("{i}"),
             Value::String(s) => println!("{s}"),
             Value::Type(t) => println!("{t:?}"),
-            Value::Object(o) => println!("{o:?}"),
+            Value::Record(o) => println!("{o:?}"),
         },
     }
     Ok(())
@@ -260,7 +265,9 @@ fn main() {
                 fields: vec![
                     ("i".to_string(), Expr::Int(5)),
                     ("s".to_string(), Expr::String("hello".to_string())),
-                ],
+                ]
+                .into_iter()
+                .collect(),
             }),
         ),
         Stmt::PrintLn(Expr::Var("foo".to_string())),
@@ -362,7 +369,9 @@ mod tests {
                     fields: vec![
                         ("i".to_string(), Expr::Int(5)),
                         ("s".to_string(), Expr::String("hello".to_string())),
-                    ],
+                    ]
+                    .into_iter()
+                    .collect(),
                 }),
             ),
             Stmt::PrintLn(Expr::FieldAccess(
@@ -394,7 +403,9 @@ mod tests {
                     fields: vec![
                         ("i".to_string(), Expr::Int(5)),
                         ("s".to_string(), Expr::String("hello".to_string())),
-                    ],
+                    ]
+                    .into_iter()
+                    .collect(),
                 }),
             ),
             Stmt::PrintLn(Expr::FieldAccess(
@@ -438,7 +449,7 @@ mod tests {
                 "foo".to_string(),
                 Some("Foo".to_string()),
                 Expr::Record(Record {
-                    fields: vec![("i".to_string(), Expr::Int(5))],
+                    fields: vec![("i".to_string(), Expr::Int(5))].into_iter().collect(),
                 }),
             ),
         ];
