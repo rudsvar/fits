@@ -73,6 +73,7 @@ pub enum Expr {
     // Int
     Int(i128),
     Lt(Box<Expr>, Box<Expr>),
+    Add(Box<Expr>, Box<Expr>),
     // String
     String(String),
     // Var
@@ -161,6 +162,10 @@ pub fn eval(expr: Expr, env: &Env) -> Result<Value, Error> {
             (Value::Int(a), Value::Int(b)) => Value::Bool(a < b),
             _ => panic!("Lt type error"),
         },
+        Expr::Add(e1, e2) => match (eval(*e1, env)?, eval(*e2, env)?) {
+            (Value::Int(a), Value::Int(b)) => Value::Int(a + b),
+            _ => panic!("Add type error"),
+        },
         Expr::String(s) => Value::String(s),
         Expr::Var(v) => env.get(&v)?.1,
         Expr::Record(r) => {
@@ -188,22 +193,14 @@ fn type_of(expr: &Expr, env: &Env) -> Result<Type, Error> {
         Expr::Bool(_) => Type::Bool,
         Expr::Int(_) => Type::Int,
         Expr::Lt(e1, e2) => {
-            let e1_ty = type_of(e1, env)?;
-            let e2_ty = type_of(e2, env)?;
-            match (e1_ty, e2_ty) {
-                // Both int
-                (Type::Int, Type::Int) => Type::Int,
-                // Only b int
-                (a, Type::Int) => Err(Error::TypeError {
-                    expected: Type::Int,
-                    actual: a,
-                })?,
-                // Something wrong with b
-                (_, b) => Err(Error::TypeError {
-                    expected: Type::Int,
-                    actual: b,
-                })?,
-            }
+            assert_type(&Type::Int, &type_of(e1, env)?)?;
+            assert_type(&Type::Int, &type_of(e2, env)?)?;
+            Type::Bool
+        }
+        Expr::Add(e1, e2) => {
+            assert_type(&Type::Int, &type_of(e1, env)?)?;
+            assert_type(&Type::Int, &type_of(e2, env)?)?;
+            Type::Int
         }
         Expr::String(_) => Type::String,
         Expr::Record(r) => {
@@ -558,6 +555,12 @@ mod tests {
             Ok(Value::String("no".to_string())),
             eval(expr, &Env::default())
         );
+    }
+
+    #[test]
+    fn two_plus_three_equals_five() {
+        let expr = Expr::Add(Box::new(Expr::Int(2)), Box::new(Expr::Int(3)));
+        assert_eq!(Ok(Value::Int(5)), eval(expr, &Env::default()));
     }
 
     #[test]
