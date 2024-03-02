@@ -739,4 +739,65 @@ mod tests {
         let program = vec![Stmt::PrintLn(Expr::Int(0))];
         exec(program, &mut Env::default()).unwrap();
     }
+
+    fn define_fibonacci() -> Vec<Stmt> {
+        vec![Stmt::FunDef(
+            "fib".to_string(),
+            Fun {
+                params: vec![("n".to_string(), "Int".to_string())],
+                return_ty: "Int".to_string(),
+                body: Box::new(Expr::If(
+                    // If n < 2
+                    Box::new(Expr::Lt(
+                        Box::new(Expr::Var("n".to_string())),
+                        Box::new(Expr::Int(2)),
+                    )),
+                    // evaluate to n
+                    Box::new(Expr::Var("n".to_string())),
+                    // else evaluate to fib(n-1) + fib(n-1)
+                    Box::new(Expr::Add(
+                        Box::new(Expr::FunCall(
+                            "fib".to_string(),
+                            vec![Expr::Sub(
+                                Box::new(Expr::Var("n".to_string())),
+                                Box::new(Expr::Int(1)),
+                            )],
+                        )),
+                        Box::new(Expr::FunCall(
+                            "fib".to_string(),
+                            vec![Expr::Sub(
+                                Box::new(Expr::Var("n".to_string())),
+                                Box::new(Expr::Int(2)),
+                            )],
+                        )),
+                    )),
+                )),
+            },
+        )]
+    }
+
+    fn call_fibonacci(n: i128) -> Expr {
+        Expr::FunCall("fib".to_string(), vec![Expr::Int(n)])
+    }
+
+    #[test]
+    fn fib_0_is_0() {
+        let mut env = Env::default();
+        exec(define_fibonacci(), &mut env).unwrap();
+        assert_eq!(Ok(Value::Int(0)), eval(call_fibonacci(0), &env));
+    }
+
+    #[test]
+    fn fib_1_is_1() {
+        let mut env = Env::default();
+        exec(define_fibonacci(), &mut env).unwrap();
+        assert_eq!(Ok(Value::Int(1)), eval(call_fibonacci(1), &env));
+    }
+
+    #[test]
+    fn fib_10_is_55() {
+        let mut env = Env::default();
+        exec(define_fibonacci(), &mut env).unwrap();
+        assert_eq!(Ok(Value::Int(55)), eval(call_fibonacci(10), &env));
+    }
 }
