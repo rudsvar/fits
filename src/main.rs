@@ -6,6 +6,7 @@ use std::{
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Value {
+    Bool(bool),
     Int(i128),
     String(String),
     Type(Type),
@@ -67,15 +68,25 @@ impl<T, E> Record<Result<T, E>> {
 
 #[derive(Debug)]
 pub enum Expr {
+    // Bool
+    Bool(bool),
+    // Int
     Int(i128),
+    Lt(Box<Expr>, Box<Expr>),
+    // String
     String(String),
+    // Var
     Var(String),
+    // Record
     Record(Record<Expr>),
     FieldAccess(Box<Expr>, String),
+    // Control flow
+    If(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
+    Bool,
     Int,
     String,
     Type,
@@ -102,6 +113,14 @@ pub enum Error {
 #[derive(Debug)]
 pub struct Env {
     env: HashMap<String, (Type, Value)>,
+}
+
+impl Env {
+    pub fn empty() -> Self {
+        Self {
+            env: HashMap::new(),
+        }
+    }
 }
 
 impl Default for Env {
@@ -136,7 +155,12 @@ impl Env {
 #[tracing::instrument(skip(env), ret)]
 pub fn eval(expr: Expr, env: &Env) -> Result<Value, Error> {
     Ok(match expr {
+        Expr::Bool(b) => Value::Bool(b),
         Expr::Int(i) => Value::Int(i),
+        Expr::Lt(e1, e2) => match (eval(*e1, env)?, eval(*e2, env)?) {
+            (Value::Int(a), Value::Int(b)) => Value::Bool(a < b),
+            _ => panic!("Lt type error"),
+        },
         Expr::String(s) => Value::String(s),
         Expr::Var(v) => env.get(&v)?.1,
         Expr::Record(r) => {
@@ -151,12 +175,36 @@ pub fn eval(expr: Expr, env: &Env) -> Result<Value, Error> {
             Value::Record(r) => r.get(&field)?,
             _ => Err(Error::NoFields(field))?,
         },
+        Expr::If(b, e1, e2) => match eval(*b, env)? {
+            Value::Bool(true) => eval(*e1, env)?,
+            Value::Bool(false) => eval(*e2, env)?,
+            _ => panic!("If type error"),
+        },
     })
 }
 
 fn type_of(expr: &Expr, env: &Env) -> Result<Type, Error> {
     let ty = match expr {
+        Expr::Bool(_) => Type::Bool,
         Expr::Int(_) => Type::Int,
+        Expr::Lt(e1, e2) => {
+            let e1_ty = type_of(e1, env)?;
+            let e2_ty = type_of(e2, env)?;
+            match (e1_ty, e2_ty) {
+                // Both int
+                (Type::Int, Type::Int) => Type::Int,
+                // Only b int
+                (a, Type::Int) => Err(Error::TypeError {
+                    expected: Type::Int,
+                    actual: a,
+                })?,
+                // Something wrong with b
+                (_, b) => Err(Error::TypeError {
+                    expected: Type::Int,
+                    actual: b,
+                })?,
+            }
+        }
         Expr::String(_) => Type::String,
         Expr::Record(r) => {
             let r = r.map(|e| type_of(e, env)).transpose()?;
@@ -172,11 +220,24 @@ fn type_of(expr: &Expr, env: &Env) -> Result<Type, Error> {
                 _ => Err(Error::NoFields(f.to_string()))?,
             }
         }
+        Expr::If(b, e1, e2) => {
+            let b_ty = type_of(b, env)?;
+            assert_type(&Type::Bool, &b_ty)?;
+            let e1_ty = type_of(e1, env)?;
+            let e2_ty = type_of(e2, env)?;
+            if e1_ty != e2_ty {
+                return Err(Error::TypeError {
+                    expected: e1_ty,
+                    actual: e2_ty,
+                });
+            }
+            e1_ty
+        }
     };
     Ok(ty)
 }
 
-fn satisfies_type(expected: &Type, actual: &Type) -> Result<(), Error> {
+fn assert_type(expected: &Type, actual: &Type) -> Result<(), Error> {
     match (expected, actual) {
         // If record, we just need the required fields
         (a @ Type::Record(expected), b @ Type::Record(actual)) => {
@@ -188,7 +249,7 @@ fn satisfies_type(expected: &Type, actual: &Type) -> Result<(), Error> {
                         actual: b.clone(),
                     });
                 };
-                satisfies_type(expected_f_ty, &actual_f_ty)?;
+                assert_type(expected_f_ty, &actual_f_ty)?;
             }
             Ok(())
         }
@@ -215,7 +276,7 @@ pub fn step(stmt: Stmt, env: &mut Env) -> Result<(), Error> {
             if let Some(required_ty) = required_ty {
                 match env.get(&required_ty)? {
                     (Type::Type, Value::Type(required_ty)) => {
-                        satisfies_type(&required_ty, &real_type)?;
+                        assert_type(&required_ty, &real_type)?;
                     }
                     _ => Err(Error::NotType(required_ty))?,
                 };
@@ -224,6 +285,7 @@ pub fn step(stmt: Stmt, env: &mut Env) -> Result<(), Error> {
         }
         Stmt::TypeDef(name, ty) => env.put(name, Type::Type, Value::Type(ty))?,
         Stmt::PrintLn(e) => match eval(e, env)? {
+            Value::Bool(b) => println!("{b}"),
             Value::Int(i) => println!("{i}"),
             Value::String(s) => println!("{s}"),
             Value::Type(t) => println!("{t:?}"),
@@ -469,6 +531,32 @@ mod tests {
         assert_eq!(
             Err(Error::TypeError { expected, actual }),
             exec(program, &mut Env::default())
+        );
+    }
+
+    #[test]
+    fn if_three_lt_five_gives_yes() {
+        let expr = Expr::If(
+            Box::new(Expr::Lt(Box::new(Expr::Int(3)), Box::new(Expr::Int(5)))),
+            Box::new(Expr::String("yes".to_string())),
+            Box::new(Expr::String("no".to_string())),
+        );
+        assert_eq!(
+            Ok(Value::String("yes".to_string())),
+            eval(expr, &Env::default())
+        );
+    }
+
+    #[test]
+    fn if_five_lt_three_gives_no() {
+        let expr = Expr::If(
+            Box::new(Expr::Lt(Box::new(Expr::Int(5)), Box::new(Expr::Int(3)))),
+            Box::new(Expr::String("yes".to_string())),
+            Box::new(Expr::String("no".to_string())),
+        );
+        assert_eq!(
+            Ok(Value::String("no".to_string())),
+            eval(expr, &Env::default())
         );
     }
 
