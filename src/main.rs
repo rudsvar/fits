@@ -67,11 +67,6 @@ pub enum Stmt {
     PrintLn(Expr),
 }
 
-#[derive(Debug, Default)]
-pub struct Program {
-    stmts: Vec<Stmt>,
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     AlreadyDefined(String),
@@ -116,7 +111,7 @@ impl Env {
     }
 }
 
-#[tracing::instrument(ret)]
+#[tracing::instrument(skip(env), ret)]
 pub fn eval(expr: Expr, env: &Env) -> Result<Value, Error> {
     Ok(match expr {
         Expr::Int(i) => Value::Int(i),
@@ -204,7 +199,7 @@ fn satisfies_type(expected: &Type, actual: &Type) -> Result<(), Error> {
     }
 }
 
-#[tracing::instrument(ret)]
+#[tracing::instrument(skip(env), ret)]
 pub fn step(stmt: Stmt, env: &mut Env) -> Result<(), Error> {
     match stmt {
         // If specified, `e` must satisfy type `ty`.
@@ -231,7 +226,6 @@ pub fn step(stmt: Stmt, env: &mut Env) -> Result<(), Error> {
     Ok(())
 }
 
-#[tracing::instrument(ret)]
 fn exec(stmts: Vec<Stmt>, env: &mut Env) -> Result<(), Error> {
     for stmt in stmts {
         step(stmt, env)?;
@@ -247,7 +241,38 @@ fn init_logging() {
 fn main() {
     init_logging();
 
-    let program = vec![];
+    let program = vec![
+        Stmt::TypeDef(
+            "Foo".to_string(),
+            Type::Custom {
+                fields: {
+                    let mut fields = HashMap::new();
+                    fields.insert("i".to_string(), Type::Int);
+                    fields.insert("s".to_string(), Type::String);
+                    fields
+                },
+            },
+        ),
+        Stmt::VarDecl(
+            "foo".to_string(),
+            Some("Foo".to_string()),
+            Expr::Record(Record {
+                fields: vec![
+                    ("i".to_string(), Expr::Int(5)),
+                    ("s".to_string(), Expr::String("hello".to_string())),
+                ],
+            }),
+        ),
+        Stmt::PrintLn(Expr::Var("foo".to_string())),
+        Stmt::PrintLn(Expr::FieldAccess(
+            Box::new(Expr::Var("foo".to_string())),
+            "i".to_string(),
+        )),
+        Stmt::PrintLn(Expr::FieldAccess(
+            Box::new(Expr::Var("foo".to_string())),
+            "s".to_string(),
+        )),
+    ];
     let mut env = Env::default();
     if let Err(e) = exec(program, &mut env) {
         eprintln!("{e:?}");
@@ -313,6 +338,124 @@ mod tests {
         assert_eq!(
             Err(Error::NotDefined("a".to_string())),
             exec(stmts, &mut Env::default())
+        );
+    }
+
+    #[test]
+    fn can_access_field_of_record() {
+        let program = vec![
+            Stmt::TypeDef(
+                "Foo".to_string(),
+                Type::Custom {
+                    fields: {
+                        let mut fields = HashMap::new();
+                        fields.insert("i".to_string(), Type::Int);
+                        fields.insert("s".to_string(), Type::String);
+                        fields
+                    },
+                },
+            ),
+            Stmt::VarDecl(
+                "foo".to_string(),
+                Some("Foo".to_string()),
+                Expr::Record(Record {
+                    fields: vec![
+                        ("i".to_string(), Expr::Int(5)),
+                        ("s".to_string(), Expr::String("hello".to_string())),
+                    ],
+                }),
+            ),
+            Stmt::PrintLn(Expr::FieldAccess(
+                Box::new(Expr::Var("foo".to_string())),
+                "i".to_string(),
+            )),
+        ];
+        assert_eq!(Ok(()), exec(program, &mut Env::default()));
+    }
+
+    #[test]
+    fn cannot_access_invalid_field_of_record() {
+        let program = vec![
+            Stmt::TypeDef(
+                "Foo".to_string(),
+                Type::Custom {
+                    fields: {
+                        let mut fields = HashMap::new();
+                        fields.insert("i".to_string(), Type::Int);
+                        fields.insert("s".to_string(), Type::String);
+                        fields
+                    },
+                },
+            ),
+            Stmt::VarDecl(
+                "foo".to_string(),
+                Some("Foo".to_string()),
+                Expr::Record(Record {
+                    fields: vec![
+                        ("i".to_string(), Expr::Int(5)),
+                        ("s".to_string(), Expr::String("hello".to_string())),
+                    ],
+                }),
+            ),
+            Stmt::PrintLn(Expr::FieldAccess(
+                Box::new(Expr::Var("foo".to_string())),
+                "invalid".to_string(),
+            )),
+        ];
+        assert_eq!(
+            Err(Error::NoSuchField("invalid".to_string())),
+            exec(program, &mut Env::default())
+        );
+    }
+
+    #[test]
+    fn cannot_access_field_of_int() {
+        let program = vec![Stmt::PrintLn(Expr::FieldAccess(
+            Box::new(Expr::Int(0)),
+            "i".to_string(),
+        ))];
+        assert_eq!(
+            Err(Error::NoFields("i".to_string())),
+            exec(program, &mut Env::default())
+        );
+    }
+
+    #[test]
+    fn record_must_have_all_fields_of_type() {
+        let program = vec![
+            Stmt::TypeDef(
+                "Foo".to_string(),
+                Type::Custom {
+                    fields: {
+                        let mut fields = HashMap::new();
+                        fields.insert("i".to_string(), Type::Int);
+                        fields.insert("s".to_string(), Type::String);
+                        fields
+                    },
+                },
+            ),
+            Stmt::VarDecl(
+                "foo".to_string(),
+                Some("Foo".to_string()),
+                Expr::Record(Record {
+                    fields: vec![("i".to_string(), Expr::Int(5))],
+                }),
+            ),
+        ];
+        let expected = Type::Custom {
+            fields: [
+                ("i".to_string(), Type::Int),
+                ("s".to_string(), Type::String),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        let actual = Type::Custom {
+            fields: [("i".to_string(), Type::Int)].into_iter().collect(),
+        };
+        assert_eq!(
+            Err(Error::TypeError { expected, actual }),
+            exec(program, &mut Env::default())
         );
     }
 
