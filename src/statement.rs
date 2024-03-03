@@ -18,9 +18,9 @@ pub enum Stmt {
 #[tracing::instrument(skip_all, ret)]
 pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), Error> {
     match stmt {
-        // If specified, `e` must satisfy type `ty`.
+        // Ignore optional type annotation during execution.
         Stmt::VarDef(name, _, e) => env.put(name, eval(e, env)?)?,
-        // Don't have to do anything for type definitions after type checking.
+        // Ignore type definitions during execution.
         Stmt::TypeDef(_, _) => {}
         Stmt::FunDef(f) => env.put(f.name.clone(), Value::Function(f))?,
         Stmt::PrintLn(e) => println!("{:?}", eval(e, env)?),
