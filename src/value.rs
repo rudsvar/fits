@@ -7,7 +7,7 @@ pub enum Value {
     String(String),
     Type(Type),
     Record(Record<Value>),
-    Fun(Function),
+    Function(Function),
 }
 
 impl Value {

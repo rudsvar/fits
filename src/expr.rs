@@ -19,13 +19,12 @@ pub enum Expr {
     // Control flow
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     // Functions
-    Function(Function),
+    Function(String, Function),
     FunctionCall(String, Vec<Expr>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Function {
-    pub name: String,
     pub params: Vec<(String, String)>,
     pub return_ty: String,
     pub body: Box<Expr>,
@@ -55,15 +54,16 @@ pub fn eval(expr: Expr, env: &Env<Value>) -> Result<Value, Error> {
                 eval(*e2, env)?
             }
         }
-        // Nothing to evaluate until called
-        Expr::Function(f) => Value::Fun(f),
+        // Nothing to evaluate until called.
+        // For instance, `let x = f` doesn't evaluate `f`.
+        Expr::Function(_, f) => Value::Function(f),
         // Evaluate arguments, evaluate fun body in env with parameters
         Expr::FunctionCall(f_name, args) => {
             tracing::info!("Evaluating function call {}({:?})", f_name, args);
             // Look up function to call
             let f = env.get(&f_name)?;
             // Check that it is a function
-            let Value::Fun(f) = f else {
+            let Value::Function(f) = f else {
                 return Err(Error::Custom("Expected function".to_string()));
             };
             tracing::info!("{f_name} is a function");

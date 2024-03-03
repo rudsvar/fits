@@ -20,7 +20,7 @@ impl Env<Value> {
         let mut filtered_env = HashMap::new();
         for (k, v) in &self.env {
             // Keep function definitions
-            if let Value::Fun(_) = v {
+            if let Value::Function(_) = v {
                 filtered_env.insert(k.clone(), v.clone());
             };
         }
@@ -33,7 +33,7 @@ impl Env<Type> {
         let mut filtered_env = HashMap::new();
         for (k, v) in &self.env {
             // Keep function definitions
-            if let Type::Fun(_, _) = v {
+            if let Type::Function(_, _) = v {
                 filtered_env.insert(k.clone(), v.clone());
             };
         }

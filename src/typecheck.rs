@@ -6,7 +6,7 @@ pub enum Type {
     Int,
     String,
     Record(Record<Type>),
-    Fun(Vec<Type>, Box<Type>),
+    Function(Vec<Type>, Box<Type>),
 }
 
 impl Type {
@@ -43,6 +43,7 @@ impl Type {
 }
 
 impl Type {
+    /// Returns the field if the type is a record.
     fn get_field(&self, field: &str) -> Result<Type, Error> {
         match self {
             Type::Record(record) => Ok(record.get(field)?),
@@ -51,6 +52,7 @@ impl Type {
     }
 }
 
+/// Returns the type of an expression.
 fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
     let ty = match expr {
         Expr::Bool(_) => Type::Bool,
@@ -87,7 +89,7 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
             }
             e1_ty
         }
-        Expr::Function(f) => {
+        Expr::Function(name, f) => {
             tracing::info!("Type checking function");
             let param_types: Vec<Type> = f
                 .params
@@ -105,21 +107,21 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
             }
             // Put function itself in env to enable recursion
             fun_env.put(
-                f.name.clone(),
-                Type::Fun(param_types.clone(), Box::new(return_type.clone())),
+                name.to_string(),
+                Type::Function(param_types.clone(), Box::new(return_type.clone())),
             )?;
             // Type check in new env
             let body_type = type_of(&f.body, &fun_env)?;
             tracing::info!("Body type: {:?}", body_type);
             body_type.fits(&return_type)?;
-            Type::Fun(param_types, Box::new(return_type))
+            Type::Function(param_types, Box::new(return_type))
         }
         Expr::FunctionCall(f_name, args) => {
             tracing::info!("Type checking function call to {f_name}");
             // Look up function to call
             let f = env.get(f_name)?;
             // Check that it is a function
-            let Type::Fun(params, return_ty) = f else {
+            let Type::Function(params, return_ty) = f else {
                 return Err(Error::Custom("Expected function".to_string()));
             };
             tracing::info!("It's a function at least");
@@ -166,8 +168,19 @@ pub fn typecheck_stmt(stmt: &Stmt, env: &mut Env<Type>) -> Result<(), Error> {
             }
             Ok(())
         }
-        Stmt::TypeDef(td) => env.put(td.name.clone(), td.ty.clone()),
-        Stmt::FunDef(f) => env.put(f.name.clone(), type_of(&Expr::Function(f.clone()), env)?),
+        Stmt::TypeDef(name, r) => {
+            let mut ty = Record::default();
+            for (field, ty_name) in &r.fields {
+                let field_ty = env.get(ty_name)?;
+                ty.fields.insert(field.clone(), field_ty);
+            }
+            env.put(name.clone(), Type::Record(ty))?;
+            Ok(())
+        }
+        Stmt::FunDef(name, f) => env.put(
+            name.clone(),
+            type_of(&Expr::Function(name.clone(), f.clone()), env)?,
+        ),
         Stmt::PrintLn(_) => todo!(),
     }
 }
@@ -184,7 +197,7 @@ mod tests {
 
     use std::collections::BTreeMap;
 
-    use crate::{statement::TypeDef, Record};
+    use crate::Record;
 
     use super::*;
 
@@ -205,17 +218,17 @@ mod tests {
     #[test]
     fn record_must_have_all_fields_of_type() {
         let program = vec![
-            Stmt::TypeDef(TypeDef {
-                name: "Foo".to_string(),
-                ty: Type::Record(Record {
+            Stmt::TypeDef(
+                "Foo".to_string(),
+                Record {
                     fields: {
                         let mut fields = BTreeMap::new();
-                        fields.insert("i".to_string(), Type::Int);
-                        fields.insert("s".to_string(), Type::String);
+                        fields.insert("i".to_string(), "Int".to_string());
+                        fields.insert("s".to_string(), "String".to_string());
                         fields
                     },
-                }),
-            }),
+                },
+            ),
             Stmt::VarDef(
                 "foo".to_string(),
                 Some("Foo".to_string()),
