@@ -2,6 +2,8 @@ use crate::{env::Env, record::Record, value::Value, Error};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Expr {
+    // Unit
+    Unit,
     // Bool
     Bool(bool),
     // Int
@@ -39,6 +41,7 @@ pub fn eval_as<T: TryFrom<Value, Error = Error>>(expr: Expr, env: &Env<Value>) -
 #[tracing::instrument(skip_all, ret)]
 pub fn eval(expr: Expr, env: &Env<Value>) -> Result<Value, Error> {
     Ok(match expr {
+        Expr::Unit => Value::Unit,
         Expr::Bool(b) => Value::Bool(b),
         Expr::Int(i) => Value::Int(i),
         Expr::Lt(e1, e2) => Value::Bool(eval_as::<i128>(*e1, env)? < eval_as::<i128>(*e2, env)?),

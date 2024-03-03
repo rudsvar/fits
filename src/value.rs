@@ -2,6 +2,7 @@ use crate::{typecheck::Type, Error, Function, Record};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Value {
+    Unit,
     Bool(bool),
     Int(i128),
     String(String),

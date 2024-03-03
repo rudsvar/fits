@@ -2,6 +2,7 @@ use crate::{Env, Error, Expr, Record, Stmt};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
+    Unit,
     Bool,
     Int,
     String,
@@ -55,6 +56,7 @@ impl Type {
 /// Returns the type of an expression.
 fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
     let ty = match expr {
+        Expr::Unit => Type::Unit,
         Expr::Bool(_) => Type::Bool,
         Expr::Int(_) => Type::Int,
         Expr::Lt(e1, e2) => {
