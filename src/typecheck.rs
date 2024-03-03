@@ -89,7 +89,7 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
             }
             e1_ty
         }
-        Expr::Function(name, f) => {
+        Expr::Function(f) => {
             tracing::info!("Type checking function");
             let param_types: Vec<Type> = f
                 .params
@@ -107,7 +107,7 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
             }
             // Put function itself in env to enable recursion
             fun_env.put(
-                name.to_string(),
+                f.name.to_string(),
                 Type::Function(param_types.clone(), Box::new(return_type.clone())),
             )?;
             // Type check in new env
@@ -177,10 +177,7 @@ pub fn typecheck_stmt(stmt: &Stmt, env: &mut Env<Type>) -> Result<(), Error> {
             env.put(name.clone(), Type::Record(ty))?;
             Ok(())
         }
-        Stmt::FunDef(name, f) => env.put(
-            name.clone(),
-            type_of(&Expr::Function(name.clone(), f.clone()), env)?,
-        ),
+        Stmt::FunDef(f) => env.put(f.name.clone(), type_of(&Expr::Function(f.clone()), env)?),
         Stmt::PrintLn(_) => todo!(),
     }
 }

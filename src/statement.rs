@@ -10,7 +10,7 @@ use crate::{
 pub enum Stmt {
     VarDef(String, Option<String>, Expr),
     TypeDef(String, Record<String>),
-    FunDef(String, Function),
+    FunDef(Function),
     PrintLn(Expr),
 }
 
@@ -22,7 +22,7 @@ pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), Error> {
         Stmt::VarDef(name, _, e) => env.put(name, eval(e, env)?)?,
         // Don't have to do anything for type definitions after type checking.
         Stmt::TypeDef(_, _) => {}
-        Stmt::FunDef(name, f) => env.put(name, Value::Function(f))?,
+        Stmt::FunDef(f) => env.put(f.name.clone(), Value::Function(f))?,
         Stmt::PrintLn(e) => println!("{:?}", eval(e, env)?),
     }
     Ok(())
@@ -171,39 +171,37 @@ mod tests {
     }
 
     fn define_fibonacci() -> Vec<Stmt> {
-        vec![Stmt::FunDef(
-            "fib".to_string(),
-            Function {
-                params: vec![("n".to_string(), "Int".to_string())],
-                return_ty: "Int".to_string(),
-                body: Box::new(Expr::If(
-                    // If n < 2
-                    Box::new(Expr::Lt(
-                        Box::new(Expr::Var("n".to_string())),
-                        Box::new(Expr::Int(2)),
-                    )),
-                    // evaluate to n
+        vec![Stmt::FunDef(Function {
+            name: "fib".to_string(),
+            params: vec![("n".to_string(), "Int".to_string())],
+            return_ty: "Int".to_string(),
+            body: Box::new(Expr::If(
+                // If n < 2
+                Box::new(Expr::Lt(
                     Box::new(Expr::Var("n".to_string())),
-                    // else evaluate to fib(n-1) + fib(n-1)
-                    Box::new(Expr::Add(
-                        Box::new(Expr::FunctionCall(
-                            "fib".to_string(),
-                            vec![Expr::Sub(
-                                Box::new(Expr::Var("n".to_string())),
-                                Box::new(Expr::Int(1)),
-                            )],
-                        )),
-                        Box::new(Expr::FunctionCall(
-                            "fib".to_string(),
-                            vec![Expr::Sub(
-                                Box::new(Expr::Var("n".to_string())),
-                                Box::new(Expr::Int(2)),
-                            )],
-                        )),
+                    Box::new(Expr::Int(2)),
+                )),
+                // evaluate to n
+                Box::new(Expr::Var("n".to_string())),
+                // else evaluate to fib(n-1) + fib(n-1)
+                Box::new(Expr::Add(
+                    Box::new(Expr::FunctionCall(
+                        "fib".to_string(),
+                        vec![Expr::Sub(
+                            Box::new(Expr::Var("n".to_string())),
+                            Box::new(Expr::Int(1)),
+                        )],
+                    )),
+                    Box::new(Expr::FunctionCall(
+                        "fib".to_string(),
+                        vec![Expr::Sub(
+                            Box::new(Expr::Var("n".to_string())),
+                            Box::new(Expr::Int(2)),
+                        )],
                     )),
                 )),
-            },
-        )]
+            )),
+        })]
     }
 
     fn call_fibonacci(n: i128) -> Expr {
