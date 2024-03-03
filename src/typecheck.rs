@@ -184,7 +184,7 @@ mod tests {
 
     use std::collections::BTreeMap;
 
-    use crate::{Record, TypeDef};
+    use crate::{statement::TypeDef, Record};
 
     use super::*;
 
