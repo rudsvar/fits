@@ -38,11 +38,11 @@ pub enum TypedExpr {
 }
 
 pub struct TyEnv {
-    ty_env: BTreeMap<String, Type>,
+    _ty_env: BTreeMap<String, Type>,
 }
 
 pub enum TypeError {}
 
-pub fn typecheck(e: Expr, env: &TyEnv) -> Result<TypedExpr, TypeError> {
+pub fn typecheck(_e: Expr, _env: &TyEnv) -> Result<TypedExpr, TypeError> {
     todo!()
 }
