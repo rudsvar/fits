@@ -10,6 +10,7 @@ use value::Value;
 
 pub mod env;
 pub mod expr;
+pub mod parse;
 pub mod record;
 pub mod statement;
 pub mod typecheck;

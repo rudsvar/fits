@@ -1,0 +1,224 @@
+use nom::{
+    branch::alt,
+    bytes::complete::{is_not, tag},
+    character::complete::{alpha1, alphanumeric0, char, digit1, satisfy},
+    combinator::{map, map_res, opt, recognize},
+    error::context,
+    multi::{many0, separated_list0},
+    sequence::{delimited, pair, separated_pair},
+    IResult,
+};
+
+use crate::{expr::Expr, record::Record};
+
+type ParseResult<'a, T> = IResult<&'a str, T>;
+
+pub fn unit(input: &str) -> IResult<&str, Expr> {
+    map(pair(symbol("("), symbol(")")), |_| Expr::Unit)(input)
+}
+
+pub fn bool(input: &str) -> IResult<&str, bool> {
+    let t = map(symbol("true"), |_| true);
+    let f = map(symbol("false"), |_| false);
+    alt((t, f))(input)
+}
+
+pub fn int(input: &str) -> IResult<&str, i128> {
+    let (input, sign) = opt(alt((tag("+"), tag("-"))))(input)?;
+    let (input, i) = map_res(recognize(digit1), str::parse::<i128>)(input)?;
+    let i: i128 = if let Some("-") = sign { -i } else { i };
+    Ok((input, i))
+}
+
+pub fn keyword<'a>(keyword: &str) -> impl Fn(&'a str) -> IResult<&'a str, String> + '_ {
+    move |input| {
+        let (input, s) = tag(keyword)(input)?;
+        Ok((input, s.to_string()))
+    }
+}
+
+pub fn string(input: &str) -> IResult<&str, String> {
+    let (input, s) = delimited(char('"'), recognize(many0(is_not("\""))), char('"'))(input)?;
+    Ok((input, s.to_string()))
+}
+
+pub fn lexeme<'a, T>(
+    mut p: impl FnMut(&'a str) -> IResult<&'a str, T>,
+) -> impl FnMut(&'a str) -> IResult<&'a str, T> {
+    move |input| {
+        let (input, _) = many0(satisfy(|c| c.is_whitespace()))(input)?;
+        p(input)
+    }
+}
+
+pub fn identifier(input: &str) -> IResult<&str, String> {
+    let (input, identifier) = lexeme(recognize(pair(alpha1, alphanumeric0)))(input)?;
+    Ok((input, identifier.to_string()))
+}
+
+pub fn key_value<'a, T>(
+    value_parser: impl FnMut(&'a str) -> ParseResult<'a, T>,
+) -> impl FnMut(&'a str) -> IResult<&'a str, (String, T)> {
+    let mut key_value = separated_pair(identifier, symbol(":"), lexeme(value_parser));
+    move |input| {
+        let (input, (key, value)) = key_value(input)?;
+        Ok((input, (key.to_string(), value)))
+    }
+}
+
+pub fn symbol<'a>(symbol: &'a str) -> impl FnMut(&'a str) -> ParseResult<'a, String> {
+    move |input| {
+        let (input, s) = lexeme(tag(symbol))(input)?;
+        Ok((input, s.to_string()))
+    }
+}
+
+pub fn record<'a, T>(
+    value_parser: impl FnMut(&'a str) -> ParseResult<'a, T>,
+) -> impl FnMut(&'a str) -> IResult<&'a str, Record<T>> {
+    let mut parse_record = delimited(
+        symbol("{"),
+        separated_list0(symbol(","), key_value(value_parser)),
+        symbol("}"),
+    );
+    move |input| {
+        let (input, kvs) = parse_record(input)?;
+        let record = Record {
+            fields: kvs.into_iter().collect(),
+        };
+        Ok((input, record))
+    }
+}
+
+pub fn expr(input: &str) -> ParseResult<Expr> {
+    alt((
+        map(context("unit", unit), |_| Expr::Unit),
+        map(context("bool", bool), Expr::Bool),
+        map(context("int", int), Expr::Int),
+        map(context("string", string), Expr::String),
+        map(context("ident", identifier), Expr::Var),
+        map(context("record", record(expr)), Expr::Record),
+        delimited(symbol("("), context("(expr)", expr), symbol(")")),
+    ))(input)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::expr::Expr;
+
+    #[test]
+    fn parse_unit() {
+        assert_eq!(Ok(("", Expr::Unit)), unit("()"));
+        assert_eq!(Ok(("", Expr::Unit)), unit(" ()"));
+        assert_eq!(Ok(("", Expr::Unit)), unit("( )"));
+    }
+
+    #[test]
+    fn parse_bool() {
+        assert_eq!(Ok(("", true)), bool("true"));
+        assert_eq!(Ok(("", false)), bool("false"));
+    }
+
+    #[test]
+    fn parse_int() {
+        assert_eq!(Ok(("", 123)), int("123"));
+        assert_eq!(Ok(("", -123)), int("-123"));
+    }
+
+    #[test]
+    fn parse_string() {
+        assert_eq!(Ok(("", "".to_string())), string("\"\""));
+        assert_eq!(Ok(("", "abc".to_string())), string("\"abc\""));
+    }
+
+    #[test]
+    fn parse_key_value() {
+        let input = r#"  abc: "def""#;
+        let expected = ("abc".to_string(), "def".to_string());
+        assert_eq!(Ok(("", expected)), key_value(string)(input));
+    }
+
+    #[test]
+    fn parse_record() {
+        let input = r#"
+            {
+                abc: "def" , 
+                e123 : "456" }"#;
+        let expected = Record {
+            fields: vec![
+                ("abc".to_string(), "def".to_string()),
+                ("e123".to_string(), "456".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        assert_eq!(Ok(("", expected)), record(string)(input));
+    }
+
+    #[test]
+    fn parse_lexeme() {
+        assert_eq!(Ok(("   ", 'x')), lexeme(char('x'))("  \n x   "))
+    }
+
+    #[test]
+    fn parse_expr_unit() {
+        assert_eq!(Ok(("", Expr::Unit)), expr("()"));
+        assert_eq!(Ok(("", Expr::Unit)), expr(" ()"));
+        assert_eq!(Ok(("", Expr::Unit)), expr("( )"));
+        assert_eq!(Ok((" ", Expr::Unit)), expr("() "));
+    }
+
+    #[test]
+    fn parse_expr_bool() {
+        assert_eq!(Ok(("", Expr::Bool(true))), expr("true"));
+        assert_eq!(Ok(("", Expr::Bool(false))), expr("false"));
+    }
+
+    #[test]
+    fn parse_expr_int() {
+        assert_eq!(Ok(("", Expr::Int(812))), expr("812"));
+    }
+
+    #[test]
+    fn parse_expr_string() {
+        assert_eq!(
+            Ok(("", Expr::String("Hello!\nThere".to_string()))),
+            expr("\"Hello!\nThere\"")
+        );
+    }
+
+    #[test]
+    fn parse_expr_var() {
+        assert_eq!(Ok(("", Expr::Var("foo".to_string()))), expr("foo"));
+    }
+
+    #[test]
+    fn parse_expr_record() {
+        assert_eq!(
+            Ok((
+                "",
+                Expr::Record(Record {
+                    fields: vec![("key".to_string(), Expr::Int(38))]
+                        .into_iter()
+                        .collect()
+                })
+            )),
+            expr(
+                r#"
+                {
+                    key: 38
+                }"#
+            )
+        );
+    }
+
+    #[test]
+    fn parse_expr_parens() {
+        assert_eq!(Ok(("", Expr::Bool(true))), expr("(true)"));
+        assert_eq!(Ok(("", Expr::Bool(false))), expr("(false)"));
+        assert_eq!(Ok(("", Expr::Int(28))), expr("(28)"));
+        assert_eq!(Ok(("", Expr::String("s".to_string()))), expr("(\"s\")"));
+        assert_eq!(Ok(("", Expr::Var("s".to_string()))), expr("((((s))))"));
+    }
+}
