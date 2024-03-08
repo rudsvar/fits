@@ -1,7 +1,7 @@
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
-    character::complete::{alpha1, alphanumeric0, char, digit1, satisfy},
+    character::complete::{alpha1, alphanumeric0, char, digit1, one_of, satisfy},
     combinator::{map, map_res, opt, recognize},
     error::context,
     multi::{many0, separated_list0},
@@ -24,9 +24,13 @@ pub fn bool(input: &str) -> IResult<&str, bool> {
 }
 
 pub fn int(input: &str) -> IResult<&str, i128> {
-    let (input, sign) = opt(alt((tag("+"), tag("-"))))(input)?;
-    let (input, i) = map_res(recognize(digit1), str::parse::<i128>)(input)?;
-    let i: i128 = if let Some("-") = sign { -i } else { i };
+    let (input, sign) = opt(alt((symbol("+"), symbol("-"))))(input)?;
+    let (input, i) = lexeme(map_res(recognize(digit1), str::parse::<i128>))(input)?;
+    let i: i128 = if let Some("-") = sign.as_deref() {
+        -i
+    } else {
+        i
+    };
     Ok((input, i))
 }
 
@@ -90,16 +94,55 @@ pub fn record<'a, T>(
     }
 }
 
-pub fn expr(input: &str) -> ParseResult<Expr> {
-    alt((
-        map(context("unit", unit), |_| Expr::Unit),
-        map(context("bool", bool), Expr::Bool),
-        map(context("int", int), Expr::Int),
-        map(context("string", string), Expr::String),
-        map(context("ident", identifier), Expr::Var),
-        map(context("record", record(expr)), Expr::Record),
+pub fn factor(input: &str) -> ParseResult<Expr> {
+    let (input, e) = alt((
+        map(unit, |_| Expr::Unit),
+        map(bool, Expr::Bool),
+        map(int, Expr::Int),
+        map(string, Expr::String),
+        map(identifier, Expr::Var),
+        map(record(expr), Expr::Record),
         delimited(symbol("("), context("(expr)", expr), symbol(")")),
-    ))(input)
+    ))(input)?;
+
+    // Parse function call
+    let (input, lparen) = opt(symbol("("))(input)?;
+    match (e, lparen) {
+        (Expr::Var(f), Some(_)) => {
+            let (input, args) = separated_list0(symbol(","), expr)(input)?;
+            let (input, _) = symbol(")")(input)?;
+            Ok((input, Expr::FunctionCall(f, args)))
+        }
+        (e, _) => Ok((input, e)),
+    }
+}
+
+// Term, many factors sep by ^, *, .
+pub fn term(input: &str) -> ParseResult<Expr> {
+    let (mut big_input, mut e1) = factor(input)?;
+    loop {
+        let (input, op) = opt(lexeme(one_of("^*.")))(big_input)?;
+        if let Some(op) = op {
+            match op {
+                '.' => {
+                    let (input, field_name) = identifier(input)?;
+                    big_input = input;
+                    e1 = Expr::FieldAccess(Box::new(e1), field_name);
+                }
+                _ => unimplemented!(),
+            }
+        } else {
+            break;
+        }
+    }
+    Ok((big_input, e1))
+}
+
+pub fn expr(input: &str) -> ParseResult<Expr> {
+    // Get many
+    let (input, e1) = term(input)?;
+    // TODO: Parse list of terms sep by term operators, make term parser
+    Ok((input, e1))
 }
 
 #[cfg(test)]
@@ -220,5 +263,54 @@ mod tests {
         assert_eq!(Ok(("", Expr::Int(28))), expr("(28)"));
         assert_eq!(Ok(("", Expr::String("s".to_string()))), expr("(\"s\")"));
         assert_eq!(Ok(("", Expr::Var("s".to_string()))), expr("((((s))))"));
+    }
+
+    #[test]
+    fn parse_expr_function_call() {
+        assert_eq!(
+            Ok(("", Expr::FunctionCall("f".to_string(), vec![Expr::Int(3)]))),
+            expr("f ( 3 )")
+        );
+        assert_eq!(
+            Ok(("", Expr::FunctionCall("f".to_string(), vec![Expr::Int(3)]))),
+            expr("f(3)")
+        );
+    }
+
+    #[test]
+    fn parse_expr_field_access() {
+        assert_eq!(
+            Ok((
+                "",
+                Expr::FieldAccess(Box::new(Expr::Var("foo".to_string())), "bar".to_string())
+            )),
+            expr("foo.bar")
+        );
+        assert_eq!(
+            Ok((
+                "",
+                Expr::FieldAccess(
+                    Box::new(Expr::FieldAccess(
+                        Box::new(Expr::Var("foo".to_string())),
+                        "bar".to_string()
+                    )),
+                    "baz".to_string()
+                )
+            )),
+            expr("foo.bar.baz")
+        );
+        assert_eq!(
+            Ok((
+                "",
+                Expr::FieldAccess(
+                    Box::new(Expr::FunctionCall(
+                        "foo".to_string(),
+                        vec![Expr::String("arg".to_string())]
+                    )),
+                    "bar".to_string()
+                ),
+            )),
+            expr("foo(\"arg\").bar")
+        );
     }
 }
