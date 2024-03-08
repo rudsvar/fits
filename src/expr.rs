@@ -11,6 +11,7 @@ pub enum Expr {
     Lt(Box<Expr>, Box<Expr>),
     Add(Box<Expr>, Box<Expr>),
     Sub(Box<Expr>, Box<Expr>),
+    Mul(Box<Expr>, Box<Expr>),
     // String
     String(String),
     // Var
@@ -47,6 +48,7 @@ pub fn eval(expr: Expr, env: &Env<Value>) -> Result<Value, Error> {
         Expr::Lt(e1, e2) => Value::Bool(eval_as::<i128>(*e1, env)? < eval_as::<i128>(*e2, env)?),
         Expr::Add(e1, e2) => Value::Int(eval_as::<i128>(*e1, env)? + eval_as::<i128>(*e2, env)?),
         Expr::Sub(e1, e2) => Value::Int(eval_as::<i128>(*e1, env)? - eval_as::<i128>(*e2, env)?),
+        Expr::Mul(e1, e2) => Value::Int(eval_as::<i128>(*e1, env)? * eval_as::<i128>(*e2, env)?),
         Expr::String(s) => Value::String(s),
         Expr::Var(v) => env.get(&v)?,
         Expr::Record(r) => Value::Record(r.map(|e| eval(e, env)).transpose()?),

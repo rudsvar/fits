@@ -94,6 +94,7 @@ pub fn record<'a, T>(
     }
 }
 
+/// Parses a factor, a unit of expression.
 pub fn factor(input: &str) -> ParseResult<Expr> {
     let (input, e) = alt((
         map(unit, |_| Expr::Unit),
@@ -117,17 +118,22 @@ pub fn factor(input: &str) -> ParseResult<Expr> {
     }
 }
 
-// Term, many factors sep by ^, *, .
+/// Parses a term, composed of factors.
 pub fn term(input: &str) -> ParseResult<Expr> {
-    let (mut big_input, mut e1) = factor(input)?;
+    let (mut big_input, mut e1) = lexeme(factor)(input)?;
     loop {
-        let (input, op) = opt(lexeme(one_of("^*.")))(big_input)?;
+        let (input, op) = opt(lexeme(one_of("*.")))(big_input)?;
         if let Some(op) = op {
             match op {
                 '.' => {
                     let (input, field_name) = identifier(input)?;
                     big_input = input;
                     e1 = Expr::FieldAccess(Box::new(e1), field_name);
+                }
+                '*' => {
+                    let (input, e2) = factor(input)?;
+                    big_input = input;
+                    e1 = Expr::Mul(Box::new(e1), Box::new(e2));
                 }
                 _ => unimplemented!(),
             }
@@ -138,11 +144,30 @@ pub fn term(input: &str) -> ParseResult<Expr> {
     Ok((big_input, e1))
 }
 
+/// Parses an expression, composed of terms.
 pub fn expr(input: &str) -> ParseResult<Expr> {
-    // Get many
-    let (input, e1) = term(input)?;
-    // TODO: Parse list of terms sep by term operators, make term parser
-    Ok((input, e1))
+    let (mut big_input, mut e1) = lexeme(term)(input)?;
+    loop {
+        let (input, op) = opt(lexeme(one_of("+-")))(big_input)?;
+        if let Some(op) = op {
+            match op {
+                '+' => {
+                    let (input, e2) = expr(input)?;
+                    big_input = input;
+                    e1 = Expr::Add(Box::new(e1), Box::new(e2));
+                }
+                '-' => {
+                    let (input, e2) = expr(input)?;
+                    big_input = input;
+                    e1 = Expr::Sub(Box::new(e1), Box::new(e2));
+                }
+                _ => unimplemented!(),
+            }
+        } else {
+            break;
+        }
+    }
+    Ok((big_input, e1))
 }
 
 #[cfg(test)]
@@ -312,5 +337,55 @@ mod tests {
             )),
             expr("foo(\"arg\").bar")
         );
+    }
+
+    #[test]
+    fn parse_expr_mul() {
+        assert_eq!(
+            Ok((
+                "",
+                Expr::Mul(Box::new(Expr::Int(3)), Box::new(Expr::Int(5)))
+            )),
+            expr("3 * 5")
+        )
+    }
+
+    #[test]
+    fn parse_expr_add() {
+        assert_eq!(
+            Ok((
+                "",
+                Expr::Add(Box::new(Expr::Int(3)), Box::new(Expr::Int(5)))
+            )),
+            expr("3 + 5")
+        )
+    }
+
+    #[test]
+    fn parse_expr_add_mul() {
+        assert_eq!(
+            Ok((
+                "",
+                Expr::Add(
+                    Box::new(Expr::Int(3)),
+                    Box::new(Expr::Mul(Box::new(Expr::Int(5)), Box::new(Expr::Int(7))))
+                )
+            )),
+            expr("3 + 5 * 7")
+        )
+    }
+
+    #[test]
+    fn parse_expr_mul_add() {
+        assert_eq!(
+            Ok((
+                "",
+                Expr::Add(
+                    Box::new(Expr::Mul(Box::new(Expr::Int(3)), Box::new(Expr::Int(5)))),
+                    Box::new(Expr::Int(7))
+                )
+            )),
+            expr("3 * 5 + 7")
+        )
     }
 }

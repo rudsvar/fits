@@ -74,6 +74,11 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
             type_of(e2, env)?.fits(&Type::Int)?;
             Type::Int
         }
+        Expr::Mul(e1, e2) => {
+            type_of(e1, env)?.fits(&Type::Int)?;
+            type_of(e2, env)?.fits(&Type::Int)?;
+            Type::Int
+        }
         Expr::String(_) => Type::String,
         Expr::Record(r) => Type::Record(r.as_ref().map(|e| type_of(e, env)).transpose()?),
         Expr::Var(v) => env.get(v)?,
