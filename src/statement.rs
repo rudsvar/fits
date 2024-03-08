@@ -6,7 +6,7 @@ use crate::{
     Error,
 };
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Stmt {
     VarDef(String, Option<String>, Expr),
     TypeDef(String, Record<String>),

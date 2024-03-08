@@ -9,7 +9,7 @@ use nom::{
     IResult,
 };
 
-use crate::{expr::Expr, record::Record};
+use crate::{expr::Expr, record::Record, statement::Stmt};
 
 type ParseResult<'a, T> = IResult<&'a str, T>;
 
@@ -168,6 +168,16 @@ pub fn expr(input: &str) -> ParseResult<Expr> {
         }
     }
     Ok((big_input, e1))
+}
+
+pub fn variable_definition(input: &str) -> ParseResult<Stmt> {
+    let (input, _) = symbol("let")(input)?;
+    let (input, name) = identifier(input)?;
+    let (input, _) = symbol(":")(input)?;
+    let (input, ty) = opt(identifier)(input)?;
+    let (input, _) = symbol("=")(input)?;
+    let (input, e) = expr(input)?;
+    Ok((input, Stmt::VarDef(name, ty, e)))
 }
 
 #[cfg(test)]
@@ -386,6 +396,17 @@ mod tests {
                 )
             )),
             expr("3 * 5 + 7")
-        )
+        );
+    }
+
+    #[test]
+    fn parse_variable_definition() {
+        assert_eq!(
+            Ok((
+                "",
+                Stmt::VarDef("a".to_string(), Some("b".to_string()), Expr::Unit)
+            )),
+            variable_definition("let a: b = ()")
+        );
     }
 }
