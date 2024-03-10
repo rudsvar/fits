@@ -1,7 +1,7 @@
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
-    character::complete::{alpha1, alphanumeric0, char, digit1, one_of, satisfy},
+    character::complete::{alpha1, alphanumeric0, char, digit1, satisfy},
     combinator::{eof, map, map_res, opt, recognize},
     error::context,
     multi::{many0, separated_list0},
@@ -137,26 +137,67 @@ pub fn factor(input: &str) -> ParseResult<Expr> {
 }
 
 /// Parses a term, composed of factors.
-pub fn term(input: &str) -> ParseResult<Expr> {
+pub fn term2(input: &str) -> ParseResult<Expr> {
     let (mut big_input, mut e1) = lexeme(factor)(input)?;
     loop {
-        let (input, op) = opt(lexeme(one_of(".*<")))(big_input)?;
+        let (input, op) = opt(lexeme(alt((
+            symbol("."),
+            symbol("*"),
+            symbol("<"),
+            symbol("%"),
+        ))))(big_input)?;
         if let Some(op) = op {
-            match op {
-                '.' => {
+            match op.as_str() {
+                "." => {
                     let (input, field_name) = identifier(input)?;
                     big_input = input;
                     e1 = Expr::FieldAccess(Box::new(e1), field_name);
                 }
-                '*' => {
+                "*" => {
                     let (input, e2) = factor(input)?;
                     big_input = input;
                     e1 = Expr::Mul(Box::new(e1), Box::new(e2));
                 }
-                '<' => {
+                "<" => {
                     let (input, e2) = factor(input)?;
                     big_input = input;
                     e1 = Expr::Lt(Box::new(e1), Box::new(e2));
+                }
+                "%" => {
+                    let (input, e2) = factor(input)?;
+                    big_input = input;
+                    e1 = Expr::Mod(Box::new(e1), Box::new(e2));
+                }
+                _ => unimplemented!(),
+            }
+        } else {
+            break;
+        }
+    }
+    Ok((big_input, e1))
+}
+
+/// Parses a term, composed of factors.
+pub fn term(input: &str) -> ParseResult<Expr> {
+    let (mut big_input, mut e1) = lexeme(term2)(input)?;
+    loop {
+        let (input, op) = opt(lexeme(alt((symbol("+"), symbol("-"), symbol("==")))))(big_input)?;
+        if let Some(op) = op {
+            match op.as_str() {
+                "+" => {
+                    let (input, e2) = term2(input)?;
+                    big_input = input;
+                    e1 = Expr::Add(Box::new(e1), Box::new(e2));
+                }
+                "-" => {
+                    let (input, e2) = term2(input)?;
+                    big_input = input;
+                    e1 = Expr::Sub(Box::new(e1), Box::new(e2));
+                }
+                "==" => {
+                    let (input, e2) = term2(input)?;
+                    big_input = input;
+                    e1 = Expr::Eq(Box::new(e1), Box::new(e2));
                 }
                 _ => unimplemented!(),
             }
@@ -171,18 +212,13 @@ pub fn term(input: &str) -> ParseResult<Expr> {
 pub fn expr(input: &str) -> ParseResult<Expr> {
     let (mut big_input, mut e1) = lexeme(term)(input)?;
     loop {
-        let (input, op) = opt(lexeme(one_of("+-")))(big_input)?;
+        let (input, op) = opt(lexeme(alt((symbol("&&"),))))(big_input)?;
         if let Some(op) = op {
-            match op {
-                '+' => {
+            match op.as_str() {
+                "&&" => {
                     let (input, e2) = expr(input)?;
                     big_input = input;
-                    e1 = Expr::Add(Box::new(e1), Box::new(e2));
-                }
-                '-' => {
-                    let (input, e2) = expr(input)?;
-                    big_input = input;
-                    e1 = Expr::Sub(Box::new(e1), Box::new(e2));
+                    e1 = Expr::And(Box::new(e1), Box::new(e2));
                 }
                 _ => unimplemented!(),
             }
@@ -304,7 +340,7 @@ mod tests {
     fn parse_record() {
         let input = r#"
             {
-                abc: "def" , 
+                abc: "def" ,
                 e123 : "456" }"#;
         let expected = Record {
             fields: vec![
@@ -565,6 +601,49 @@ mod tests {
                 })
             )),
             stmt(" fn f ( a : A , b : B, c: C) : D = if a then b else c;")
+        );
+    }
+
+    #[test]
+    fn parse_mod_eq() {
+        assert_eq!(
+            Ok((
+                "",
+                Expr::Eq(
+                    Box::new(Expr::Mod(
+                        Box::new(Expr::Var("n".to_string())),
+                        Box::new(Expr::Int(2))
+                    )),
+                    Box::new(Expr::Int(0))
+                )
+            )),
+            expr("n % 2 == 0")
+        );
+    }
+
+    #[test]
+    fn parse_mod_eq_and() {
+        assert_eq!(
+            Ok((
+                "",
+                Expr::And(
+                    Box::new(Expr::Eq(
+                        Box::new(Expr::Mod(
+                            Box::new(Expr::Var("n".to_string())),
+                            Box::new(Expr::Int(3))
+                        )),
+                        Box::new(Expr::Int(0))
+                    )),
+                    Box::new(Expr::Eq(
+                        Box::new(Expr::Mod(
+                            Box::new(Expr::Var("n".to_string())),
+                            Box::new(Expr::Int(5))
+                        )),
+                        Box::new(Expr::Int(0))
+                    ))
+                )
+            )),
+            expr("n % 3 == 0 && n % 5 == 0")
         );
     }
 }

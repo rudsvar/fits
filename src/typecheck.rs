@@ -88,6 +88,22 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
             type_of(e2, env)?.fits(&Type::Int)?;
             Type::Bool
         }
+        Expr::Eq(e1, e2) => {
+            let t1 = type_of(e1, env)?;
+            let t2 = type_of(e2, env)?;
+            if t1 != t2 {
+                return Err(Error::TypeError {
+                    expected: t1,
+                    actual: t2,
+                });
+            }
+            Type::Bool
+        }
+        Expr::And(e1, e2) => {
+            type_of(e1, env)?.fits(&Type::Bool)?;
+            type_of(e2, env)?.fits(&Type::Bool)?;
+            Type::Bool
+        }
         Expr::Add(e1, e2) => {
             type_of(e1, env)?.fits(&Type::Int)?;
             type_of(e2, env)?.fits(&Type::Int)?;
@@ -99,6 +115,11 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
             Type::Int
         }
         Expr::Mul(e1, e2) => {
+            type_of(e1, env)?.fits(&Type::Int)?;
+            type_of(e2, env)?.fits(&Type::Int)?;
+            Type::Int
+        }
+        Expr::Mod(e1, e2) => {
             type_of(e1, env)?.fits(&Type::Int)?;
             type_of(e2, env)?.fits(&Type::Int)?;
             Type::Int
