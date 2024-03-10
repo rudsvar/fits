@@ -11,6 +11,7 @@ use value::Value;
 pub mod env;
 pub mod expr;
 pub mod parse;
+pub mod parse2;
 pub mod record;
 pub mod statement;
 pub mod typecheck;
