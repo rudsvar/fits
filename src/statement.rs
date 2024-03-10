@@ -37,7 +37,6 @@ pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), Error> {
         Stmt::VarDef(name, _, e) => env.put(name, eval(e, env)?)?,
         // Ignore type definitions during execution.
         Stmt::TypeDef(name, r) => {
-            println!("Putting {name} in env");
             let r = r.map(|v| env.get(&v)).transpose()?;
             env.put(name, Value::Record(r))?;
         }
