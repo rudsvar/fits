@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         "fmt" => {
             let program = fits::parse(&input)?;
-            println!("{}", program);
+            print!("{}", program);
         }
         _ => eprintln!("No such command"),
     }
