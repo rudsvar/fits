@@ -51,7 +51,7 @@ pub fn init_logging() {
     });
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Program {
     stmts: Vec<Stmt>,
 }
