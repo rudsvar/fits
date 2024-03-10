@@ -45,6 +45,8 @@ impl Default for Env<Value> {
     fn default() -> Self {
         let mut env = HashMap::default();
         env.insert("ZERO".to_string(), Value::Int(0));
+        env.insert("Int".to_string(), Value::Type(Type::Int));
+        env.insert("String".to_string(), Value::Type(Type::String));
         Self { env }
     }
 }

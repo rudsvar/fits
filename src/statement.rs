@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::{
     env::Env,
     expr::{eval, Expr, Function},
@@ -14,6 +16,19 @@ pub enum Stmt {
     PrintLn(Expr),
 }
 
+impl Display for Stmt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Stmt::VarDef(name, ty, e) => {
+                write!(f, "let {name}{} = {e};", ty.as_deref().unwrap_or_default())
+            }
+            Stmt::TypeDef(name, r) => write!(f, "type {name} = {r};"),
+            Stmt::FunDef(fun) => write!(f, "{fun};"),
+            Stmt::PrintLn(e) => write!(f, "println({e});"),
+        }
+    }
+}
+
 /// Executes a single statement.
 #[tracing::instrument(skip_all, ret)]
 pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), Error> {
@@ -21,9 +36,13 @@ pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), Error> {
         // Ignore optional type annotation during execution.
         Stmt::VarDef(name, _, e) => env.put(name, eval(e, env)?)?,
         // Ignore type definitions during execution.
-        Stmt::TypeDef(_, _) => {}
+        Stmt::TypeDef(name, r) => {
+            println!("Putting {name} in env");
+            let r = r.map(|v| env.get(&v)).transpose()?;
+            env.put(name, Value::Record(r))?;
+        }
         Stmt::FunDef(f) => env.put(f.name.clone(), Value::Function(f))?,
-        Stmt::PrintLn(e) => println!("{:?}", eval(e, env)?),
+        Stmt::PrintLn(e) => println!("{}", eval(e, env)?),
     }
     Ok(())
 }

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::{Env, Error, Expr, Record, Stmt};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -8,6 +10,28 @@ pub enum Type {
     String,
     Record(Record<Type>),
     Function(Vec<Type>, Box<Type>),
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Unit => write!(f, "()"),
+            Type::Bool => write!(f, "Bool"),
+            Type::Int => write!(f, "Int"),
+            Type::String => write!(f, "String"),
+            Type::Record(r) => write!(f, "{r}"),
+            Type::Function(param_tys, return_ty) => write!(
+                f,
+                "fn({}): {}",
+                param_tys
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                return_ty,
+            ),
+        }
+    }
 }
 
 impl Type {
@@ -156,6 +180,7 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
     Ok(ty)
 }
 
+#[tracing::instrument(skip_all, ret)]
 pub fn typecheck_stmt(stmt: &Stmt, env: &mut Env<Type>) -> Result<(), Error> {
     match stmt {
         Stmt::VarDef(name, required_ty_name, e) => {
@@ -181,14 +206,19 @@ pub fn typecheck_stmt(stmt: &Stmt, env: &mut Env<Type>) -> Result<(), Error> {
                 let field_ty = env.get(ty_name)?;
                 ty.fields.insert(field.clone(), field_ty);
             }
+            tracing::info!("type {name} = {r}");
             env.put(name.clone(), Type::Record(ty))?;
             Ok(())
         }
         Stmt::FunDef(f) => env.put(f.name.clone(), type_of(&Expr::Function(f.clone()), env)?),
-        Stmt::PrintLn(_) => todo!(),
+        Stmt::PrintLn(e) => {
+            type_of(e, env)?;
+            Ok(())
+        }
     }
 }
 
+#[tracing::instrument(skip_all, ret)]
 pub fn typecheck_stmts(stmts: &Vec<Stmt>, env: &mut Env<Type>) -> Result<(), Error> {
     for stmt in stmts {
         typecheck_stmt(stmt, env)?;

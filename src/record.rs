@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Display};
 
 use crate::Error;
 
@@ -56,5 +56,15 @@ impl<T, E> Record<Result<T, E>> {
             fields.insert(f, v?);
         }
         Ok(Record { fields })
+    }
+}
+
+impl<T: Display> Display for Record<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{{")?;
+        for (k, v) in self.fields.iter() {
+            writeln!(f, "  {k}: {v}")?;
+        }
+        write!(f, "}}")
     }
 }

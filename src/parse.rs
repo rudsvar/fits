@@ -2,14 +2,19 @@ use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
     character::complete::{alpha1, alphanumeric0, char, digit1, one_of, satisfy},
-    combinator::{map, map_res, opt, recognize},
+    combinator::{eof, map, map_res, opt, recognize},
     error::context,
     multi::{many0, separated_list0},
-    sequence::{delimited, pair, separated_pair},
+    sequence::{delimited, pair, preceded, separated_pair},
     IResult,
 };
 
-use crate::{expr::Expr, record::Record, statement::Stmt};
+use crate::{
+    expr::{Expr, Function},
+    record::Record,
+    statement::Stmt,
+    Program,
+};
 
 type ParseResult<'a, T> = IResult<&'a str, T>;
 
@@ -94,6 +99,16 @@ pub fn record<'a, T>(
     }
 }
 
+pub fn r#if(input: &str) -> ParseResult<(Expr, Expr, Expr)> {
+    let (input, _) = symbol("if")(input)?;
+    let (input, b) = expr(input)?;
+    let (input, _) = symbol("then")(input)?;
+    let (input, e1) = expr(input)?;
+    let (input, _) = symbol("else")(input)?;
+    let (input, e2) = expr(input)?;
+    Ok((input, (b, e1, e2)))
+}
+
 /// Parses a factor, a unit of expression.
 pub fn factor(input: &str) -> ParseResult<Expr> {
     let (input, e) = alt((
@@ -101,6 +116,9 @@ pub fn factor(input: &str) -> ParseResult<Expr> {
         map(bool, Expr::Bool),
         map(int, Expr::Int),
         map(string, Expr::String),
+        map(r#if, |(b, e1, e2)| {
+            Expr::If(Box::new(b), Box::new(e1), Box::new(e2))
+        }),
         map(identifier, Expr::Var),
         map(record(expr), Expr::Record),
         delimited(symbol("("), context("(expr)", expr), symbol(")")),
@@ -122,7 +140,7 @@ pub fn factor(input: &str) -> ParseResult<Expr> {
 pub fn term(input: &str) -> ParseResult<Expr> {
     let (mut big_input, mut e1) = lexeme(factor)(input)?;
     loop {
-        let (input, op) = opt(lexeme(one_of("*.")))(big_input)?;
+        let (input, op) = opt(lexeme(one_of(".*<")))(big_input)?;
         if let Some(op) = op {
             match op {
                 '.' => {
@@ -134,6 +152,11 @@ pub fn term(input: &str) -> ParseResult<Expr> {
                     let (input, e2) = factor(input)?;
                     big_input = input;
                     e1 = Expr::Mul(Box::new(e1), Box::new(e2));
+                }
+                '<' => {
+                    let (input, e2) = factor(input)?;
+                    big_input = input;
+                    e1 = Expr::Lt(Box::new(e1), Box::new(e2));
                 }
                 _ => unimplemented!(),
             }
@@ -173,11 +196,71 @@ pub fn expr(input: &str) -> ParseResult<Expr> {
 pub fn variable_definition(input: &str) -> ParseResult<Stmt> {
     let (input, _) = symbol("let")(input)?;
     let (input, name) = identifier(input)?;
-    let (input, _) = symbol(":")(input)?;
-    let (input, ty) = opt(identifier)(input)?;
+    let (input, ty) = opt(preceded(symbol(":"), identifier))(input)?;
     let (input, _) = symbol("=")(input)?;
     let (input, e) = expr(input)?;
     Ok((input, Stmt::VarDef(name, ty, e)))
+}
+
+pub fn type_definition(input: &str) -> ParseResult<Stmt> {
+    let (input, _) = symbol("type")(input)?;
+    let (input, name) = identifier(input)?;
+    let (input, _) = symbol("=")(input)?;
+    let (input, r) = record(identifier)(input)?;
+    Ok((input, Stmt::TypeDef(name, r)))
+}
+
+pub fn function_definition(input: &str) -> ParseResult<Stmt> {
+    let (input, _) = symbol("fn")(input)?;
+    let (input, name) = identifier(input)?;
+    let (input, params) = delimited(
+        symbol("("),
+        separated_list0(
+            symbol(","),
+            separated_pair(identifier, symbol(":"), identifier),
+        ),
+        symbol(")"),
+    )(input)?;
+    let (input, _) = symbol(":")(input)?;
+    let (input, return_ty) = identifier(input)?;
+    let (input, _) = symbol("=")(input)?;
+    let (input, body) = expr(input)?;
+    Ok((
+        input,
+        Stmt::FunDef(Function {
+            name,
+            params,
+            body: Box::new(body),
+            return_ty,
+        }),
+    ))
+}
+
+pub fn println(input: &str) -> ParseResult<Stmt> {
+    let (input, _) = symbol("println")(input)?;
+    let (input, e) = expr(input)?;
+    Ok((input, Stmt::PrintLn(e)))
+}
+
+pub fn stmt(input: &str) -> ParseResult<Stmt> {
+    let (input, stmt) = alt((
+        variable_definition,
+        type_definition,
+        function_definition,
+        println,
+    ))(input)?;
+    let (input, _) = symbol(";")(input)?;
+    Ok((input, stmt))
+}
+
+pub fn stmts(input: &str) -> ParseResult<Vec<Stmt>> {
+    many0(stmt)(input)
+}
+
+pub fn program(input: &str) -> ParseResult<Program> {
+    let (input, program) = map(stmts, |stmts| Program { stmts })(input)?;
+    let (input, _) = lexeme(eof)(input)?;
+    Ok((input, program))
 }
 
 #[cfg(test)]
@@ -350,6 +433,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_if() {
+        assert_eq!(
+            Ok(("", (Expr::Int(0), Expr::Int(0), Expr::Int(0)))),
+            r#if("if 0 then 0 else 0")
+        );
+    }
+
+    #[test]
     fn parse_expr_mul() {
         assert_eq!(
             Ok((
@@ -407,6 +498,73 @@ mod tests {
                 Stmt::VarDef("a".to_string(), Some("b".to_string()), Expr::Unit)
             )),
             variable_definition("let a: b = ()")
+        );
+    }
+
+    #[test]
+    fn parse_type_definition() {
+        assert_eq!(
+            Ok((
+                "",
+                Stmt::TypeDef(
+                    "A".to_string(),
+                    Record {
+                        fields: vec![
+                            ("a".to_string(), "b".to_string()),
+                            ("c".to_string(), "d".to_string())
+                        ]
+                        .into_iter()
+                        .collect()
+                    }
+                )
+            )),
+            type_definition("type A = { a : b , c : d }")
+        );
+    }
+
+    #[test]
+    fn parse_function_definition() {
+        assert_eq!(
+            Ok((
+                "",
+                Stmt::FunDef(Function {
+                    name: "f".to_string(),
+                    params: vec![
+                        ("a".to_string(), "A".to_string()),
+                        ("b".to_string(), "B".to_string())
+                    ],
+                    return_ty: "C".to_string(),
+                    body: Box::new(Expr::Add(
+                        Box::new(Expr::Var("a".to_string())),
+                        Box::new(Expr::Var("b".to_string()))
+                    ))
+                })
+            )),
+            function_definition(" fn f ( a : A , b : B ) : C = a + b")
+        );
+    }
+
+    #[test]
+    fn parse_stmt() {
+        assert_eq!(
+            Ok((
+                "",
+                Stmt::FunDef(Function {
+                    name: "f".to_string(),
+                    params: vec![
+                        ("a".to_string(), "A".to_string()),
+                        ("b".to_string(), "B".to_string()),
+                        ("c".to_string(), "C".to_string())
+                    ],
+                    return_ty: "D".to_string(),
+                    body: Box::new(Expr::If(
+                        Box::new(Expr::Var("a".to_string())),
+                        Box::new(Expr::Var("b".to_string())),
+                        Box::new(Expr::Var("c".to_string()))
+                    ))
+                })
+            )),
+            stmt(" fn f ( a : A , b : B, c: C) : D = if a then b else c;")
         );
     }
 }

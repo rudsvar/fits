@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::{env::Env, record::Record, value::Value, Error};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,12 +28,50 @@ pub enum Expr {
     FunctionCall(String, Vec<Expr>),
 }
 
+impl Display for Expr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expr::Unit => write!(f, "()"),
+            Expr::Bool(b) => write!(f, "{b}"),
+            Expr::Int(i) => write!(f, "{i}"),
+            Expr::Lt(a, b) => write!(f, "{a} < {b}"),
+            Expr::Add(a, b) => write!(f, "{a} + {b}"),
+            Expr::Sub(a, b) => write!(f, "{a} - {b}"),
+            Expr::Mul(a, b) => write!(f, "{a} * {b}"),
+            Expr::String(s) => write!(f, "{s}"),
+            Expr::Var(v) => write!(f, "{v}"),
+            Expr::Record(r) => write!(f, "{r}"),
+            Expr::FieldAccess(a, b) => write!(f, "{a}.{b}"),
+            Expr::If(b, e1, e2) => write!(f, "if {b} then {e1} else {e2}"),
+            Expr::Function(fun) => write!(f, "{fun}"),
+            Expr::FunctionCall(fun, args) => {
+                let args = args
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                write!(f, "{fun}({})", args)
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Function {
     pub name: String,
     pub params: Vec<(String, String)>,
     pub return_ty: String,
     pub body: Box<Expr>,
+}
+
+impl Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fn {}(", self.name)?;
+        for (name, ty) in &self.params {
+            write!(f, "{name}: {ty}")?;
+        }
+        write!(f, "): {} = {}", self.return_ty, self.body)
+    }
 }
 
 /// Evaluates an expression and tries to extract the value as the specified type.
