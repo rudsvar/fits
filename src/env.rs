@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{typecheck::Type, Error, Value};
+use crate::{
+    typecheck::{Type, TypeError},
+    Value,
+};
 
 #[derive(Debug)]
 pub struct Env<T> {
@@ -61,18 +64,18 @@ impl Default for Env<Type> {
 }
 
 impl<T: Clone> Env<T> {
-    pub fn put(&mut self, name: String, t: T) -> Result<(), Error> {
+    pub fn put(&mut self, name: String, t: T) -> Result<(), TypeError> {
         if self.env.contains_key(&name) {
-            return Err(Error::AlreadyDefined(name));
+            return Err(TypeError::AlreadyDefined(name));
         }
         self.env.insert(name, t);
         Ok(())
     }
 
-    pub fn get(&self, s: &str) -> Result<T, Error> {
+    pub fn get(&self, s: &str) -> Result<T, TypeError> {
         self.env
             .get(s)
             .cloned()
-            .ok_or(Error::NotDefined(s.to_string()))
+            .ok_or(TypeError::NotDefined(s.to_string()))
     }
 }

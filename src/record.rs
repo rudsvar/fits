@@ -1,11 +1,17 @@
 use std::{collections::BTreeMap, fmt::Display};
 
-use crate::Error;
-
 /// A general record-like structure.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Record<T> {
     pub fields: BTreeMap<String, T>,
+}
+
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum RecordError {
+    #[error("duplicate field: {0}")]
+    DuplicateField(String),
+    #[error("no such field: {0}")]
+    NoSuchField(String),
 }
 
 impl<T> Default for Record<T> {
@@ -17,19 +23,19 @@ impl<T> Default for Record<T> {
 }
 
 impl<T: Clone> Record<T> {
-    pub fn put(&mut self, field: String, value: T) -> Result<(), Error> {
+    pub fn put(&mut self, field: String, value: T) -> Result<(), RecordError> {
         if self.fields.contains_key(&field) {
-            return Err(Error::DuplicateField(field));
+            return Err(RecordError::DuplicateField(field));
         }
         self.fields.insert(field, value);
         Ok(())
     }
 
-    pub fn get(&self, field: &str) -> Result<T, Error> {
+    pub fn get(&self, field: &str) -> Result<T, RecordError> {
         self.fields
             .get(field)
             .cloned()
-            .ok_or_else(|| Error::NoSuchField(field.to_string()))
+            .ok_or_else(|| RecordError::NoSuchField(field.to_string()))
     }
 }
 

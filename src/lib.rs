@@ -1,11 +1,12 @@
 use std::{fmt::Display, io::stderr, sync::OnceLock};
 
 use env::Env;
-use expr::{Expr, Function};
+use expr::{Expr, Function, RuntimeError};
+use parse::ParseError;
 use record::Record;
 use statement::Stmt;
 use tracing_subscriber::EnvFilter;
-use typecheck::Type;
+use typecheck::TypeError;
 use value::Value;
 
 pub mod env;
@@ -19,26 +20,12 @@ pub mod value;
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
-    #[error("duplicate field: {0}")]
-    DuplicateField(String),
-    #[error("already defined: {0}")]
-    AlreadyDefined(String),
-    #[error("not defined: {0}")]
-    NotDefined(String),
-    #[error("not a type: {0}")]
-    NotType(String),
-    #[error("no such field: {0}")]
-    NoSuchField(String),
-    #[error("expected type {expected:?}, got {actual:?}")]
-    TypeError { expected: Type, actual: Type },
-    #[error("expected type {0:?}")]
-    ExpectedType(Type),
-    #[error("expected {expected} args, got {actual}")]
-    WrongNumberOfArgs { expected: usize, actual: usize },
-    #[error("parse error: {0}")]
-    ParseError(#[from] nom::Err<String>),
     #[error("{0}")]
-    Custom(String),
+    ParseError(#[from] ParseError),
+    #[error("{0}")]
+    TypeError(#[from] TypeError),
+    #[error("{0}")]
+    RuntimeError(#[from] RuntimeError),
 }
 
 pub fn init_logging() {
@@ -65,16 +52,16 @@ impl Display for Program {
     }
 }
 
-pub fn parse(input: &str) -> Result<Program, nom::Err<String>> {
-    let (_, program) = parse::program(input).map_err(|e| e.map(|s| s.to_string()))?;
+pub fn parse(input: &str) -> Result<Program, ParseError> {
+    let (_, program) = parse::program(input)?;
     Ok(program)
 }
 
-pub fn typecheck(program: &Program) -> Result<(), Error> {
+pub fn typecheck(program: &Program) -> Result<(), TypeError> {
     typecheck::typecheck_stmts(&program.stmts, &mut Env::default())
 }
 
-pub fn execute(program: Program) -> Result<(), Error> {
+pub fn execute(program: Program) -> Result<(), RuntimeError> {
     statement::exec(program.stmts, &mut Env::default())
 }
 

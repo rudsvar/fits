@@ -1,6 +1,12 @@
 use std::fmt::Display;
 
-use crate::{env::Env, record::Record, value::Value, Error};
+use crate::{env::Env, record::Record, typecheck::TypeError, value::Value};
+
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum RuntimeError {
+    #[error("dynamic type error: {0}")]
+    TypeError(#[from] TypeError),
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Expr {
@@ -28,7 +34,7 @@ pub enum Expr {
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     // Functions
     Function(Function),
-    FunctionCall(String, Vec<Expr>),
+    Call(String, Vec<Expr>),
 }
 
 impl Display for Expr {
@@ -50,7 +56,7 @@ impl Display for Expr {
             Expr::FieldAccess(a, b) => write!(f, "{a}.{b}"),
             Expr::If(b, e1, e2) => write!(f, "if {b} then {e1} else {e2}"),
             Expr::Function(fun) => write!(f, "{fun}"),
-            Expr::FunctionCall(fun, args) => {
+            Expr::Call(fun, args) => {
                 let args = args
                     .iter()
                     .map(|e| e.to_string())
@@ -81,12 +87,16 @@ impl Display for Function {
 }
 
 /// Evaluates an expression and tries to extract the value as the specified type.
-pub fn eval_as<T: TryFrom<Value, Error = Error>>(expr: Expr, env: &Env<Value>) -> Result<T, Error> {
-    eval(expr, env)?.try_into()
+pub fn eval_as<T: TryFrom<Value, Error = TypeError>>(
+    expr: Expr,
+    env: &Env<Value>,
+) -> Result<T, RuntimeError> {
+    let value = eval(expr, env)?;
+    Ok(value.try_into()?)
 }
 
 #[tracing::instrument(skip_all, ret)]
-pub fn eval(expr: Expr, env: &Env<Value>) -> Result<Value, Error> {
+pub fn eval(expr: Expr, env: &Env<Value>) -> Result<Value, RuntimeError> {
     Ok(match expr {
         Expr::Unit => Value::Unit,
         Expr::Bool(b) => Value::Bool(b),
@@ -113,13 +123,13 @@ pub fn eval(expr: Expr, env: &Env<Value>) -> Result<Value, Error> {
         // For instance, `let x = f` doesn't evaluate `f`.
         Expr::Function(f) => Value::Function(f),
         // Evaluate arguments, evaluate fun body in env with parameters
-        Expr::FunctionCall(f_name, args) => {
+        Expr::Call(f_name, args) => {
             tracing::info!("Evaluating function call {}({:?})", f_name, args);
             // Look up function to call
             let f = env.get(&f_name)?;
             // Check that it is a function
             let Value::Function(f) = f else {
-                return Err(Error::Custom("Expected function".to_string()));
+                return Err(TypeError::Custom("Expected function".to_string()))?;
             };
             tracing::info!("{f_name} is a function");
             // Prepare function env

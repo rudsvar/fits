@@ -2,10 +2,9 @@ use std::fmt::Display;
 
 use crate::{
     env::Env,
-    expr::{eval, Expr, Function},
+    expr::{eval, Expr, Function, RuntimeError},
     record::Record,
     value::Value,
-    Error,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -31,7 +30,7 @@ impl Display for Stmt {
 
 /// Executes a single statement.
 #[tracing::instrument(skip_all, ret)]
-pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), Error> {
+pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), RuntimeError> {
     match stmt {
         // Ignore optional type annotation during execution.
         Stmt::VarDef(name, _, e) => env.put(name, eval(e, env)?)?,
@@ -47,7 +46,7 @@ pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), Error> {
 }
 
 /// Executes multiple statements.
-pub fn exec(stmts: Vec<Stmt>, env: &mut Env<Value>) -> Result<(), Error> {
+pub fn exec(stmts: Vec<Stmt>, env: &mut Env<Value>) -> Result<(), RuntimeError> {
     for stmt in stmts {
         step(stmt, env)?;
     }
@@ -58,7 +57,11 @@ pub fn exec(stmts: Vec<Stmt>, env: &mut Env<Value>) -> Result<(), Error> {
 mod tests {
     use std::collections::BTreeMap;
 
-    use crate::{init_logging, record::Record};
+    use crate::{
+        init_logging,
+        record::{Record, RecordError},
+        typecheck::TypeError,
+    };
 
     use super::*;
 
@@ -86,7 +89,7 @@ mod tests {
         init_logging();
         let stmts = vec![Stmt::PrintLn(Expr::Var("a".to_string()))];
         assert_eq!(
-            Err(Error::NotDefined("a".to_string())),
+            Err(TypeError::NotDefined("a".to_string()).into()),
             exec(stmts, &mut Env::default())
         );
     }
@@ -157,7 +160,7 @@ mod tests {
             )),
         ];
         assert_eq!(
-            Err(Error::NoSuchField("invalid".to_string())),
+            Err(TypeError::RecordError(RecordError::NoSuchField("invalid".to_string())).into()),
             exec(program, &mut Env::default())
         );
     }
@@ -170,7 +173,7 @@ mod tests {
             "i".to_string(),
         ))];
         assert_eq!(
-            Err(Error::NoSuchField("i".to_string())),
+            Err(TypeError::NoSuchFieldOnNonRecord("i".to_string()).into()),
             exec(program, &mut Env::default())
         );
     }
@@ -203,14 +206,14 @@ mod tests {
                 Box::new(Expr::Var("n".to_string())),
                 // else evaluate to fib(n-1) + fib(n-1)
                 Box::new(Expr::Add(
-                    Box::new(Expr::FunctionCall(
+                    Box::new(Expr::Call(
                         "fib".to_string(),
                         vec![Expr::Sub(
                             Box::new(Expr::Var("n".to_string())),
                             Box::new(Expr::Int(1)),
                         )],
                     )),
-                    Box::new(Expr::FunctionCall(
+                    Box::new(Expr::Call(
                         "fib".to_string(),
                         vec![Expr::Sub(
                             Box::new(Expr::Var("n".to_string())),
@@ -223,7 +226,7 @@ mod tests {
     }
 
     fn call_fibonacci(n: i128) -> Expr {
-        Expr::FunctionCall("fib".to_string(), vec![Expr::Int(n)])
+        Expr::Call("fib".to_string(), vec![Expr::Int(n)])
     }
 
     #[test]

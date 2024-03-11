@@ -16,19 +16,29 @@ use crate::{
     Program,
 };
 
-type ParseResult<'a, T> = IResult<&'a str, T>;
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
+pub struct ParseError(String);
 
-pub fn unit(input: &str) -> IResult<&str, Expr> {
-    map(pair(symbol("("), symbol(")")), |_| Expr::Unit)(input)
+impl<'a> From<nom::Err<nom::error::Error<&'a str>>> for ParseError {
+    fn from(value: nom::Err<nom::error::Error<&'a str>>) -> Self {
+        ParseError(value.to_string())
+    }
 }
 
-pub fn bool(input: &str) -> IResult<&str, bool> {
+pub type ParseResult<'a, T> = IResult<&'a str, T>;
+
+pub fn unit(input: &str) -> ParseResult<()> {
+    map(pair(symbol("("), symbol(")")), |_| ())(input)
+}
+
+pub fn bool(input: &str) -> ParseResult<bool> {
     let t = map(symbol("true"), |_| true);
     let f = map(symbol("false"), |_| false);
     alt((t, f))(input)
 }
 
-pub fn int(input: &str) -> IResult<&str, i128> {
+pub fn int(input: &str) -> ParseResult<i128> {
     let (input, sign) = opt(alt((symbol("+"), symbol("-"))))(input)?;
     let (input, i) = lexeme(map_res(recognize(digit1), str::parse::<i128>))(input)?;
     let i: i128 = if let Some("-") = sign.as_deref() {
@@ -130,7 +140,7 @@ pub fn factor(input: &str) -> ParseResult<Expr> {
         (Expr::Var(f), Some(_)) => {
             let (input, args) = separated_list0(symbol(","), expr)(input)?;
             let (input, _) = symbol(")")(input)?;
-            Ok((input, Expr::FunctionCall(f, args)))
+            Ok((input, Expr::Call(f, args)))
         }
         (e, _) => Ok((input, e)),
     }
@@ -293,7 +303,7 @@ pub fn stmts(input: &str) -> ParseResult<Vec<Stmt>> {
     many0(stmt)(input)
 }
 
-pub fn program(input: &str) -> ParseResult<Program> {
+pub fn program(input: &str) -> ParseResult<'_, Program> {
     let (input, program) = map(stmts, |stmts| Program { stmts })(input)?;
     let (input, _) = lexeme(eof)(input)?;
     Ok((input, program))
@@ -306,9 +316,9 @@ mod tests {
 
     #[test]
     fn parse_unit() {
-        assert_eq!(Ok(("", Expr::Unit)), unit("()"));
-        assert_eq!(Ok(("", Expr::Unit)), unit(" ()"));
-        assert_eq!(Ok(("", Expr::Unit)), unit("( )"));
+        assert_eq!(Ok(("", ())), unit("()"));
+        assert_eq!(Ok(("", ())), unit(" ()"));
+        assert_eq!(Ok(("", ())), unit("( )"));
     }
 
     #[test]
@@ -422,11 +432,11 @@ mod tests {
     #[test]
     fn parse_expr_function_call() {
         assert_eq!(
-            Ok(("", Expr::FunctionCall("f".to_string(), vec![Expr::Int(3)]))),
+            Ok(("", Expr::Call("f".to_string(), vec![Expr::Int(3)]))),
             expr("f ( 3 )")
         );
         assert_eq!(
-            Ok(("", Expr::FunctionCall("f".to_string(), vec![Expr::Int(3)]))),
+            Ok(("", Expr::Call("f".to_string(), vec![Expr::Int(3)]))),
             expr("f(3)")
         );
     }
@@ -457,7 +467,7 @@ mod tests {
             Ok((
                 "",
                 Expr::FieldAccess(
-                    Box::new(Expr::FunctionCall(
+                    Box::new(Expr::Call(
                         "foo".to_string(),
                         vec![Expr::String("arg".to_string())]
                     )),

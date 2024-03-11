@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::{Env, Error, Expr, Record, Stmt};
+use crate::{record::RecordError, Env, Expr, Record, Stmt};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
@@ -34,18 +34,40 @@ impl Display for Type {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum TypeError {
+    #[error("{0}")]
+    RecordError(#[from] RecordError),
+    #[error("expected type {expected}, actual {actual}")]
+    ExpectedActual { expected: Type, actual: Type },
+    #[error("expected type {0}")]
+    Expected(Type),
+    #[error("no such field on non-record: {0}")]
+    NoSuchFieldOnNonRecord(String),
+    #[error("expected function")]
+    ExpectedFunction(String),
+    #[error("expected {expected} args, got {actual}")]
+    WrongNumberOfArgs { expected: usize, actual: usize },
+    #[error("already defined: {0}")]
+    AlreadyDefined(String),
+    #[error("not defined: {0}")]
+    NotDefined(String),
+    #[error("{0}")]
+    Custom(String),
+}
+
 impl Type {
-    pub fn fits(&self, expected: &Type) -> Result<(), Error> {
+    pub fn fits(&self, expected: &Type) -> Result<(), TypeError> {
         match (expected, self) {
             // If record, we just need the required fields
-            (a @ Type::Record(expected), b @ Type::Record(actual)) => {
+            (expected @ Type::Record(expected_record), actual @ Type::Record(actual_record)) => {
                 // Each field in expected record must match field from actual record
-                for (expected_f, expected_f_ty) in expected.iter() {
+                for (expected_f, expected_f_ty) in expected_record.iter() {
                     // If a field isn't there, the type isn't satisfied
-                    let Ok(actual_f_ty) = actual.get(expected_f) else {
-                        return Err(Error::TypeError {
-                            expected: a.clone(),
-                            actual: b.clone(),
+                    let Ok(actual_f_ty) = actual_record.get(expected_f) else {
+                        return Err(TypeError::ExpectedActual {
+                            expected: expected.clone(),
+                            actual: actual.clone(),
                         });
                     };
                     actual_f_ty.fits(expected_f_ty)?;
@@ -54,14 +76,13 @@ impl Type {
             }
             // Otherwise, type must be equal
             (expected, actual) => {
-                if expected == actual {
-                    Ok(())
-                } else {
-                    Err(Error::TypeError {
+                if expected != actual {
+                    return Err(TypeError::ExpectedActual {
                         expected: expected.clone(),
                         actual: actual.clone(),
-                    })
+                    });
                 }
+                Ok(())
             }
         }
     }
@@ -69,30 +90,34 @@ impl Type {
 
 impl Type {
     /// Returns the field if the type is a record.
-    fn get_field(&self, field: &str) -> Result<Type, Error> {
+    fn get_field(&self, field: &str) -> Result<Type, TypeError> {
         match self {
             Type::Record(record) => Ok(record.get(field)?),
-            _ => Err(Error::NoSuchField(field.to_string())),
+            _ => Err(TypeError::NoSuchFieldOnNonRecord(field.to_string())),
         }
     }
 }
 
+pub fn assert_type(e: &Expr, env: &Env<Type>, ty: &Type) -> Result<(), TypeError> {
+    type_of(e, env)?.fits(ty)
+}
+
 /// Returns the type of an expression.
-fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
+fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, TypeError> {
     let ty = match expr {
         Expr::Unit => Type::Unit,
         Expr::Bool(_) => Type::Bool,
         Expr::Int(_) => Type::Int,
         Expr::Lt(e1, e2) => {
-            type_of(e1, env)?.fits(&Type::Int)?;
-            type_of(e2, env)?.fits(&Type::Int)?;
+            assert_type(e1, env, &Type::Int)?;
+            assert_type(e2, env, &Type::Int)?;
             Type::Bool
         }
         Expr::Eq(e1, e2) => {
             let t1 = type_of(e1, env)?;
             let t2 = type_of(e2, env)?;
             if t1 != t2 {
-                return Err(Error::TypeError {
+                return Err(TypeError::ExpectedActual {
                     expected: t1,
                     actual: t2,
                 });
@@ -100,13 +125,13 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
             Type::Bool
         }
         Expr::And(e1, e2) => {
-            type_of(e1, env)?.fits(&Type::Bool)?;
-            type_of(e2, env)?.fits(&Type::Bool)?;
+            assert_type(e1, env, &Type::Bool)?;
+            assert_type(e2, env, &Type::Bool)?;
             Type::Bool
         }
         Expr::Add(e1, e2) => {
-            type_of(e1, env)?.fits(&Type::Int)?;
-            type_of(e2, env)?.fits(&Type::Int)?;
+            assert_type(e1, env, &Type::Int)?;
+            assert_type(e2, env, &Type::Int)?;
             Type::Int
         }
         Expr::Sub(e1, e2) => {
@@ -134,7 +159,7 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
             let e1_ty = type_of(e1, env)?;
             let e2_ty = type_of(e2, env)?;
             if e1_ty != e2_ty {
-                return Err(Error::TypeError {
+                return Err(TypeError::ExpectedActual {
                     expected: e1_ty,
                     actual: e2_ty,
                 });
@@ -147,7 +172,7 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
                 .params
                 .iter()
                 .map(|(_, param_ty_name)| env.get(param_ty_name))
-                .collect::<Result<Vec<Type>, Error>>()?;
+                .collect::<Result<_, _>>()?;
             tracing::info!("Parameter types: {param_types:?}");
             let return_type = env.get(&f.return_ty)?;
             tracing::info!("Return type: {return_type:?}");
@@ -168,18 +193,18 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
             body_type.fits(&return_type)?;
             Type::Function(param_types, Box::new(return_type))
         }
-        Expr::FunctionCall(f_name, args) => {
+        Expr::Call(f_name, args) => {
             tracing::info!("Type checking function call to {f_name}");
             // Look up function to call
             let f = env.get(f_name)?;
             // Check that it is a function
             let Type::Function(params, return_ty) = f else {
-                return Err(Error::Custom("Expected function".to_string()));
+                return Err(TypeError::ExpectedFunction(f.to_string()));
             };
             tracing::info!("It's a function at least");
             // Check number of args.
             if args.len() != params.len() {
-                return Err(Error::WrongNumberOfArgs {
+                return Err(TypeError::WrongNumberOfArgs {
                     expected: params.len(),
                     actual: args.len(),
                 });
@@ -202,7 +227,7 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, Error> {
 }
 
 #[tracing::instrument(skip_all, ret)]
-pub fn typecheck_stmt(stmt: &Stmt, env: &mut Env<Type>) -> Result<(), Error> {
+pub fn typecheck_stmt(stmt: &Stmt, env: &mut Env<Type>) -> Result<(), TypeError> {
     match stmt {
         Stmt::VarDef(name, required_ty_name, e) => {
             let actual_ty = type_of(e, env)?;
@@ -231,7 +256,11 @@ pub fn typecheck_stmt(stmt: &Stmt, env: &mut Env<Type>) -> Result<(), Error> {
             env.put(name.clone(), Type::Record(ty))?;
             Ok(())
         }
-        Stmt::FunDef(f) => env.put(f.name.clone(), type_of(&Expr::Function(f.clone()), env)?),
+        Stmt::FunDef(f) => {
+            let f_ty = type_of(&Expr::Function(f.clone()), env)?;
+            env.put(f.name.clone(), f_ty)?;
+            Ok(())
+        }
         Stmt::PrintLn(e) => {
             type_of(e, env)?;
             Ok(())
@@ -240,7 +269,7 @@ pub fn typecheck_stmt(stmt: &Stmt, env: &mut Env<Type>) -> Result<(), Error> {
 }
 
 #[tracing::instrument(skip_all, ret)]
-pub fn typecheck_stmts(stmts: &Vec<Stmt>, env: &mut Env<Type>) -> Result<(), Error> {
+pub fn typecheck_stmts(stmts: &Vec<Stmt>, env: &mut Env<Type>) -> Result<(), TypeError> {
     for stmt in stmts {
         typecheck_stmt(stmt, env)?;
     }
@@ -262,7 +291,7 @@ mod tests {
         let mut env = Env::default();
         let stmt = Stmt::VarDef("a".to_string(), Some("String".to_string()), Expr::Int(0));
         assert_eq!(
-            Err(Error::TypeError {
+            Err(TypeError::ExpectedActual {
                 expected: Type::String,
                 actual: Type::Int
             }),
@@ -304,7 +333,7 @@ mod tests {
             fields: [("i".to_string(), Type::Int)].into_iter().collect(),
         });
         assert_eq!(
-            Err(Error::TypeError { expected, actual }),
+            Err(TypeError::ExpectedActual { expected, actual }),
             typecheck_stmts(&program, &mut Env::default())
         );
     }
