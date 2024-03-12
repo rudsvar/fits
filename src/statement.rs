@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     env::Env,
-    expr::{eval, Expr, Function, RuntimeError},
+    expr::{Expr, Function, RuntimeError},
     record::Record,
     value::Value,
 };
@@ -33,14 +33,14 @@ impl Display for Stmt {
 pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), RuntimeError> {
     match stmt {
         // Ignore optional type annotation during execution.
-        Stmt::VarDef(name, _, e) => env.put(name, eval(e, env)?)?,
+        Stmt::VarDef(name, _, e) => env.put(name, e.eval(env)?)?,
         // Ignore type definitions during execution.
         Stmt::TypeDef(name, r) => {
             let r = r.map(|v| env.get(&v)).transpose()?;
             env.put(name, Value::Record(r))?;
         }
         Stmt::FunDef(f) => env.put(f.name.clone(), Value::Function(f))?,
-        Stmt::PrintLn(e) => println!("{}", eval(e, env)?),
+        Stmt::PrintLn(e) => println!("{}", e.eval(env)?),
     }
     Ok(())
 }
@@ -233,20 +233,20 @@ mod tests {
     fn fib_0_is_0() {
         let mut env = Env::default();
         exec(define_fibonacci(), &mut env).unwrap();
-        assert_eq!(Ok(Value::Int(0)), eval(call_fibonacci(0), &env));
+        assert_eq!(Ok(Value::Int(0)), call_fibonacci(0).eval(&env));
     }
 
     #[test]
     fn fib_1_is_1() {
         let mut env = Env::default();
         exec(define_fibonacci(), &mut env).unwrap();
-        assert_eq!(Ok(Value::Int(1)), eval(call_fibonacci(1), &env));
+        assert_eq!(Ok(Value::Int(1)), call_fibonacci(1).eval(&env));
     }
 
     #[test]
     fn fib_10_is_55() {
         let mut env = Env::default();
         exec(define_fibonacci(), &mut env).unwrap();
-        assert_eq!(Ok(Value::Int(55)), eval(call_fibonacci(10), &env));
+        assert_eq!(Ok(Value::Int(55)), call_fibonacci(10).eval(&env));
     }
 }
