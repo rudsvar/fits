@@ -124,6 +124,17 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, TypeError> {
             }
             Type::Bool
         }
+        Expr::Neq(e1, e2) => {
+            let t1 = type_of(e1, env)?;
+            let t2 = type_of(e2, env)?;
+            if t1 != t2 {
+                return Err(TypeError::ExpectedActual {
+                    expected: t1,
+                    actual: t2,
+                });
+            }
+            Type::Bool
+        }
         Expr::And(e1, e2) => {
             assert_type(e1, env, &Type::Bool)?;
             assert_type(e2, env, &Type::Bool)?;
@@ -269,6 +280,11 @@ pub fn typecheck_stmt(stmt: &Stmt, env: &mut Env<Type>) -> Result<(), TypeError>
         }
         Stmt::PrintLn(e) => {
             type_of(e, env)?;
+            Ok(())
+        }
+        Stmt::Assert(e) => {
+            let ty = type_of(e, env)?;
+            ty.fits(&Type::Bool)?;
             Ok(())
         }
         Stmt::Block(stmts) => {

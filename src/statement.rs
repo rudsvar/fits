@@ -14,6 +14,7 @@ pub enum Stmt {
     TypeDef(String, Record<String>),
     FunDef(Function),
     PrintLn(Expr),
+    Assert(Expr),
     Block(Vec<Stmt>),
 }
 
@@ -41,6 +42,7 @@ impl Stmt {
             Stmt::TypeDef(name, r) => write!(f, "type {name} = {r};"),
             Stmt::FunDef(fun) => write!(f, "{fun};"),
             Stmt::PrintLn(e) => write!(f, "println({e});"),
+            Stmt::Assert(e) => write!(f, "assert({e});"),
             Stmt::Block(stmts) => {
                 writeln!(f, "{{")?;
                 for stmt in stmts {
@@ -70,6 +72,12 @@ pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), RuntimeError> {
         }
         Stmt::FunDef(f) => env.put(f.name.clone(), Value::Function(f)),
         Stmt::PrintLn(e) => println!("{}", e.eval(env)?),
+        Stmt::Assert(e) => {
+            let v = e.clone().eval(env)?;
+            if !matches!(v, Value::Bool(true)) {
+                return Err(RuntimeError::AssertionError(e.to_string()));
+            }
+        }
         Stmt::Block(stmts) => {
             env.open();
             exec(stmts, env)?;

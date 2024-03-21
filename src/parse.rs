@@ -209,6 +209,11 @@ pub fn term(input: &str) -> ParseResult<Expr> {
                     big_input = input;
                     e1 = Expr::Eq(Box::new(e1), Box::new(e2));
                 }
+                "!=" => {
+                    let (input, e2) = term2(input)?;
+                    big_input = input;
+                    e1 = Expr::Neq(Box::new(e1), Box::new(e2));
+                }
                 _ => unimplemented!(),
             }
         } else {
@@ -295,6 +300,12 @@ pub fn println(input: &str) -> ParseResult<Stmt> {
     Ok((input, Stmt::PrintLn(e)))
 }
 
+pub fn assert(input: &str) -> ParseResult<Stmt> {
+    let (input, _) = symbol("assert")(input)?;
+    let (input, e) = expr(input)?;
+    Ok((input, Stmt::Assert(e)))
+}
+
 pub fn block(input: &str) -> ParseResult<Stmt> {
     let (input, stmts) = delimited(symbol("{"), many0(stmt), symbol("}"))(input)?;
     Ok((input, Stmt::Block(stmts)))
@@ -307,6 +318,7 @@ pub fn stmt(input: &str) -> ParseResult<Stmt> {
         type_definition,
         function_definition,
         println,
+        assert,
     ))(input)?;
     let (input, _) = symbol(";")(input)?;
     Ok((input, stmt))

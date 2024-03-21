@@ -6,6 +6,8 @@ use crate::{env::Env, record::Record, typecheck::TypeError, value::Value};
 pub enum RuntimeError {
     #[error("dynamic type error: {0}")]
     TypeError(#[from] TypeError),
+    #[error("assertion error: {0}")]
+    AssertionError(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -34,6 +36,7 @@ pub enum Expr {
     Bool(bool),
     Lt(Box<Expr>, Box<Expr>),
     Eq(Box<Expr>, Box<Expr>),
+    Neq(Box<Expr>, Box<Expr>),
     And(Box<Expr>, Box<Expr>),
     // Int
     Int(i128),
@@ -63,6 +66,7 @@ impl Display for Expr {
             Expr::Int(i) => write!(f, "{i}"),
             Expr::Lt(a, b) => write!(f, "{a} < {b}"),
             Expr::Eq(a, b) => write!(f, "{a} == {b}"),
+            Expr::Neq(a, b) => write!(f, "{a} != {b}"),
             Expr::And(a, b) => write!(f, "{a} && {b}"),
             Expr::Add(a, b) => write!(f, "{a} + {b}"),
             Expr::Sub(a, b) => write!(f, "{a} - {b}"),
@@ -103,6 +107,7 @@ impl Expr {
             Expr::Bool(b) => Value::Bool(b),
             Expr::Lt(e1, e2) => Value::Bool(e1.eval_as::<i128>(env)? < e2.eval_as::<i128>(env)?),
             Expr::Eq(e1, e2) => Value::Bool(e1.eval(env)? == e2.eval(env)?),
+            Expr::Neq(e1, e2) => Value::Bool(e1.eval(env)? != e2.eval(env)?),
             Expr::And(e1, e2) => Value::Bool(e1.eval_as::<bool>(env)? && e2.eval_as::<bool>(env)?),
             Expr::Int(i) => Value::Int(i),
             Expr::Add(e1, e2) => Value::Int(e1.eval_as::<i128>(env)? + e2.eval_as::<i128>(env)?),
