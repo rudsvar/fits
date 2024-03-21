@@ -10,6 +10,7 @@ use crate::{
 #[derive(Debug, PartialEq, Eq)]
 pub enum Stmt {
     VarDef(String, Option<String>, Expr),
+    Assign(String, Expr),
     TypeDef(String, Record<String>),
     FunDef(Function),
     PrintLn(Expr),
@@ -26,7 +27,16 @@ impl Stmt {
     fn pretty_print(&self, f: &mut std::fmt::Formatter<'_>, depth: usize) -> std::fmt::Result {
         match self {
             Stmt::VarDef(name, ty, e) => {
-                write!(f, "let {name}{} = {e};", ty.as_deref().unwrap_or_default())
+                write!(
+                    f,
+                    "let {name}{} = {e};",
+                    ty.as_deref()
+                        .map(|ty| format!(": {}", ty))
+                        .unwrap_or_default()
+                )
+            }
+            Stmt::Assign(name, e) => {
+                write!(f, "{name} = {e};")
             }
             Stmt::TypeDef(name, r) => write!(f, "type {name} = {r};"),
             Stmt::FunDef(fun) => write!(f, "{fun};"),
@@ -49,6 +59,10 @@ pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), RuntimeError> {
     match stmt {
         // Ignore optional type annotation during execution.
         Stmt::VarDef(name, _, e) => env.put(name, e.eval(env)?),
+        Stmt::Assign(name, e) => {
+            // Find existing entry in env and update value
+            *env.get_mut(&name)? = e.eval(env)?;
+        }
         // Ignore type definitions during execution.
         Stmt::TypeDef(name, r) => {
             let r = r.map(|v| env.get(&v)).transpose()?;

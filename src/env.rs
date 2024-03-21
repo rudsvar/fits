@@ -90,4 +90,14 @@ impl<T: Clone> Env<T> {
             .cloned()
             .ok_or(TypeError::NotDefined(s.to_string()))
     }
+
+    pub fn get_mut(&mut self, s: &str) -> Result<&mut T, TypeError> {
+        self.scopes
+            .iter_mut()
+            .rev()
+            .flat_map(|scope| scope.iter_mut().rev())
+            .find(|(k, _)| k == s)
+            .map(|(_, v)| v)
+            .ok_or(TypeError::NotDefined(s.to_string()))
+    }
 }

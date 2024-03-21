@@ -248,6 +248,13 @@ pub fn variable_definition(input: &str) -> ParseResult<Stmt> {
     Ok((input, Stmt::VarDef(name, ty, e)))
 }
 
+pub fn assignment(input: &str) -> ParseResult<Stmt> {
+    let (input, name) = identifier(input)?;
+    let (input, _) = symbol("=")(input)?;
+    let (input, e) = expr(input)?;
+    Ok((input, Stmt::Assign(name, e)))
+}
+
 pub fn type_definition(input: &str) -> ParseResult<Stmt> {
     let (input, _) = symbol("type")(input)?;
     let (input, name) = identifier(input)?;
@@ -296,6 +303,7 @@ pub fn block(input: &str) -> ParseResult<Stmt> {
 pub fn stmt(input: &str) -> ParseResult<Stmt> {
     let (input, stmt) = alt((
         variable_definition,
+        assignment,
         type_definition,
         function_definition,
         println,

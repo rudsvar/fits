@@ -246,6 +246,12 @@ pub fn typecheck_stmt(stmt: &Stmt, env: &mut Env<Type>) -> Result<(), TypeError>
             }
             Ok(())
         }
+        Stmt::Assign(name, e) => {
+            let variable_type = env.get(name)?;
+            let expression_type = type_of(e, env)?;
+            expression_type.fits(&variable_type)?;
+            Ok(())
+        }
         Stmt::TypeDef(name, r) => {
             let mut ty = Record::default();
             for (field, ty_name) in &r.fields {
