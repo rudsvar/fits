@@ -137,7 +137,7 @@ impl Expr {
                 let mut fun_env = env.filtered();
                 for ((param_name, _), arg) in f.params.into_iter().zip(args) {
                     let arg_val = arg.eval(env)?;
-                    fun_env.put(param_name, arg_val)?;
+                    fun_env.put(param_name, arg_val);
                 }
                 // Evaluate function body in new env
                 f.body.eval(&fun_env)?

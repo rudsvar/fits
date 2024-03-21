@@ -288,6 +288,11 @@ pub fn println(input: &str) -> ParseResult<Stmt> {
     Ok((input, Stmt::PrintLn(e)))
 }
 
+pub fn block(input: &str) -> ParseResult<Stmt> {
+    let (input, stmts) = delimited(symbol("{"), many0(stmt), symbol("}"))(input)?;
+    Ok((input, Stmt::Block(stmts)))
+}
+
 pub fn stmt(input: &str) -> ParseResult<Stmt> {
     let (input, stmt) = alt((
         variable_definition,
@@ -300,7 +305,7 @@ pub fn stmt(input: &str) -> ParseResult<Stmt> {
 }
 
 pub fn stmts(input: &str) -> ParseResult<Vec<Stmt>> {
-    many0(stmt)(input)
+    many0(alt((stmt, block)))(input)
 }
 
 pub fn program(input: &str) -> ParseResult<'_, Program> {
@@ -654,6 +659,46 @@ mod tests {
                 )
             )),
             expr("n % 3 == 0 && n % 5 == 0")
+        );
+    }
+
+    #[test]
+    fn parse_empty_block() {
+        assert_eq!(
+            Ok((
+                "",
+                Program {
+                    stmts: vec![Stmt::Block(vec![])]
+                }
+            )),
+            program("{}")
+        );
+    }
+
+    #[test]
+    fn parse_block_with_definitions() {
+        assert_eq!(
+            Ok((
+                "",
+                Program {
+                    stmts: vec![
+                        Stmt::VarDef("a".to_string(), None, Expr::Int(0)),
+                        Stmt::Block(vec![Stmt::VarDef(
+                            "b".to_string(),
+                            None,
+                            Expr::Var("a".to_string())
+                        )])
+                    ]
+                }
+            )),
+            program(
+                r#"
+                let a = 0;
+                {
+                    let b = a;
+                }
+            "#
+            )
         );
     }
 }

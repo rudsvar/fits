@@ -13,10 +13,17 @@ pub enum Stmt {
     TypeDef(String, Record<String>),
     FunDef(Function),
     PrintLn(Expr),
+    Block(Vec<Stmt>),
 }
 
 impl Display for Stmt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.pretty_print(f, 0)
+    }
+}
+
+impl Stmt {
+    fn pretty_print(&self, f: &mut std::fmt::Formatter<'_>, depth: usize) -> std::fmt::Result {
         match self {
             Stmt::VarDef(name, ty, e) => {
                 write!(f, "let {name}{} = {e};", ty.as_deref().unwrap_or_default())
@@ -24,6 +31,14 @@ impl Display for Stmt {
             Stmt::TypeDef(name, r) => write!(f, "type {name} = {r};"),
             Stmt::FunDef(fun) => write!(f, "{fun};"),
             Stmt::PrintLn(e) => write!(f, "println({e});"),
+            Stmt::Block(stmts) => {
+                writeln!(f, "{{")?;
+                for stmt in stmts {
+                    writeln!(f, "{}{}", "    ".repeat(depth), stmt)?;
+                }
+                writeln!(f, "}}")?;
+                Ok(())
+            }
         }
     }
 }
@@ -33,14 +48,19 @@ impl Display for Stmt {
 pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), RuntimeError> {
     match stmt {
         // Ignore optional type annotation during execution.
-        Stmt::VarDef(name, _, e) => env.put(name, e.eval(env)?)?,
+        Stmt::VarDef(name, _, e) => env.put(name, e.eval(env)?),
         // Ignore type definitions during execution.
         Stmt::TypeDef(name, r) => {
             let r = r.map(|v| env.get(&v)).transpose()?;
-            env.put(name, Value::Record(r))?;
+            env.put(name, Value::Record(r));
         }
-        Stmt::FunDef(f) => env.put(f.name.clone(), Value::Function(f))?,
+        Stmt::FunDef(f) => env.put(f.name.clone(), Value::Function(f)),
         Stmt::PrintLn(e) => println!("{}", e.eval(env)?),
+        Stmt::Block(stmts) => {
+            env.open();
+            exec(stmts, env)?;
+            env.close();
+        }
     }
     Ok(())
 }

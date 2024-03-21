@@ -180,13 +180,13 @@ fn type_of(expr: &Expr, env: &Env<Type>) -> Result<Type, TypeError> {
             let mut fun_env = Env::default();
             for ((param_name, _), param_ty) in f.params.iter().zip(&param_types) {
                 // TODO: Placeholder value is unnecessary for type checking.
-                fun_env.put(param_name.clone(), param_ty.clone())?;
+                fun_env.put(param_name.clone(), param_ty.clone());
             }
             // Put function itself in env to enable recursion
             fun_env.put(
                 f.name.to_string(),
                 Type::Function(param_types.clone(), Box::new(return_type.clone())),
-            )?;
+            );
             // Type check in new env
             let body_type = type_of(&f.body, &fun_env)?;
             tracing::info!("Body type: {:?}", body_type);
@@ -237,11 +237,11 @@ pub fn typecheck_stmt(stmt: &Stmt, env: &mut Env<Type>) -> Result<(), TypeError>
                     let required_ty = env.get(required_ty_name)?;
                     // Make sure actual type fits required
                     actual_ty.fits(&required_ty)?;
-                    env.put(name.clone(), required_ty)?;
+                    env.put(name.clone(), required_ty);
                 }
                 // let x = ...
                 None => {
-                    env.put(name.clone(), actual_ty)?;
+                    env.put(name.clone(), actual_ty);
                 }
             }
             Ok(())
@@ -253,16 +253,22 @@ pub fn typecheck_stmt(stmt: &Stmt, env: &mut Env<Type>) -> Result<(), TypeError>
                 ty.fields.insert(field.clone(), field_ty);
             }
             tracing::info!("type {name} = {r}");
-            env.put(name.clone(), Type::Record(ty))?;
+            env.put(name.clone(), Type::Record(ty));
             Ok(())
         }
         Stmt::FunDef(f) => {
             let f_ty = type_of(&Expr::Function(f.clone()), env)?;
-            env.put(f.name.clone(), f_ty)?;
+            env.put(f.name.clone(), f_ty);
             Ok(())
         }
         Stmt::PrintLn(e) => {
             type_of(e, env)?;
+            Ok(())
+        }
+        Stmt::Block(stmts) => {
+            env.open();
+            typecheck_stmts(stmts, env)?;
+            env.close();
             Ok(())
         }
     }
