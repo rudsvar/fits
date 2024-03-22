@@ -50,3 +50,13 @@ fn values_can_change_in_scope() {
     "#;
     fits::run(input).unwrap();
 }
+
+#[test]
+fn function_call_works() {
+    let input = r#"
+        fn double(a: Int): Int = 2 * a;
+        assert(double(5) == 10);
+        assert(double(double(5)) == 20);
+    "#;
+    fits::run(input).unwrap();
+}
