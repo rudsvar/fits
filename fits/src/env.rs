@@ -20,6 +20,9 @@ impl<T> Env<T> {
     pub fn close(&mut self) {
         self.scopes.pop();
     }
+    pub fn iter(&self) -> impl Iterator<Item = &(String, T)> {
+        self.scopes.iter().flat_map(|scope| scope.iter())
+    }
 }
 
 impl Env<Value> {

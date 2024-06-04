@@ -40,7 +40,7 @@ pub fn init_logging() {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Program {
-    stmts: Vec<Stmt>,
+    pub stmts: Vec<Stmt>,
 }
 
 impl Display for Program {
