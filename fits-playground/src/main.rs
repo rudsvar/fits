@@ -65,7 +65,7 @@ fn App() -> impl IntoView {
 
     view! {
         <h1>Fits Playground</h1>
-        <div style="display: flex; gap: 40px;">
+        <div style="display: flex; gap: 20px;">
             <textarea
                 on:input=move |ev| {
                     let text = event_target_value(&ev);
@@ -86,9 +86,8 @@ fn App() -> impl IntoView {
                     }
                 }
             >
-            {input}
             </textarea>
-            <form style="display: flex; flex-direction: column">
+            <form class="buttons" style="display: flex; flex-direction: column">
                 <div>
                     <input type="radio" name="mode" value="parse" checked=true
                         on:input=move |_| {
