@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, io::Write};
 
 use crate::{
     env::Env,
@@ -57,7 +57,7 @@ impl Stmt {
 
 /// Executes a single statement.
 #[tracing::instrument(skip_all, ret)]
-pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), RuntimeError> {
+pub fn step(stmt: Stmt, env: &mut Env<Value>, output: &mut impl Write) -> Result<(), RuntimeError> {
     match stmt {
         // Ignore optional type annotation during execution.
         Stmt::VarDef(name, _, e) => env.put(name, e.eval(env)?),
@@ -71,7 +71,7 @@ pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), RuntimeError> {
             env.put(name, Value::Record(r));
         }
         Stmt::FunDef(f) => env.put(f.name.clone(), Value::Function(f)),
-        Stmt::PrintLn(e) => println!("{}", e.eval(env)?),
+        Stmt::PrintLn(e) => writeln!(output, "{}", e.eval(env)?)?,
         Stmt::Assert(e) => {
             let v = e.clone().eval(env)?;
             if !matches!(v, Value::Bool(true)) {
@@ -80,7 +80,7 @@ pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), RuntimeError> {
         }
         Stmt::Block(stmts) => {
             env.open();
-            exec(stmts, env)?;
+            exec(stmts, env, output)?;
             env.close();
         }
     }
@@ -88,9 +88,13 @@ pub fn step(stmt: Stmt, env: &mut Env<Value>) -> Result<(), RuntimeError> {
 }
 
 /// Executes multiple statements.
-pub fn exec(stmts: Vec<Stmt>, env: &mut Env<Value>) -> Result<(), RuntimeError> {
+pub fn exec(
+    stmts: Vec<Stmt>,
+    env: &mut Env<Value>,
+    output: &mut impl Write,
+) -> Result<(), RuntimeError> {
     for stmt in stmts {
-        step(stmt, env)?;
+        step(stmt, env, output)?;
     }
     Ok(())
 }
@@ -112,7 +116,7 @@ mod tests {
         init_logging();
         let mut env = Env::default();
         let stmt = Stmt::VarDef("a".to_string(), None, Expr::Int(0));
-        step(stmt, &mut env).unwrap();
+        step(stmt, &mut env, &mut std::io::stdout()).unwrap();
         assert_eq!(Value::Int(0), env.get("a").unwrap())
     }
 
@@ -123,7 +127,7 @@ mod tests {
             Stmt::VarDef("a".to_string(), None, Expr::Int(0)),
             Stmt::PrintLn(Expr::Var("a".to_string())),
         ];
-        exec(stmts, &mut Env::default()).unwrap();
+        exec(stmts, &mut Env::default(), &mut std::io::stdout()).unwrap();
     }
 
     #[test]
@@ -132,7 +136,7 @@ mod tests {
         let stmts = vec![Stmt::PrintLn(Expr::Var("a".to_string()))];
         assert_eq!(
             Err(TypeError::NotDefined("a".to_string()).into()),
-            exec(stmts, &mut Env::default())
+            exec(stmts, &mut Env::default(), &mut std::io::stdout())
         );
     }
 
@@ -167,7 +171,10 @@ mod tests {
                 "i".to_string(),
             )),
         ];
-        assert_eq!(Ok(()), exec(program, &mut Env::default()));
+        assert_eq!(
+            Ok(()),
+            exec(program, &mut Env::default(), &mut std::io::stdout())
+        );
     }
 
     #[test]
@@ -203,7 +210,7 @@ mod tests {
         ];
         assert_eq!(
             Err(TypeError::RecordError(RecordError::NoSuchField("invalid".to_string())).into()),
-            exec(program, &mut Env::default())
+            exec(program, &mut Env::default(), &mut std::io::stdout())
         );
     }
 
@@ -216,21 +223,21 @@ mod tests {
         ))];
         assert_eq!(
             Err(TypeError::NoSuchFieldOnNonRecord("i".to_string()).into()),
-            exec(program, &mut Env::default())
+            exec(program, &mut Env::default(), &mut std::io::stdout())
         );
     }
 
     #[test]
     fn empty_program_runs() {
         init_logging();
-        exec(vec![], &mut Env::default()).unwrap();
+        exec(vec![], &mut Env::default(), &mut std::io::stdout()).unwrap();
     }
 
     #[test]
     fn program_with_print_runs() {
         init_logging();
         let program = vec![Stmt::PrintLn(Expr::Int(0))];
-        exec(program, &mut Env::default()).unwrap();
+        exec(program, &mut Env::default(), &mut std::io::stdout()).unwrap();
     }
 
     fn define_fibonacci() -> Vec<Stmt> {
@@ -274,21 +281,21 @@ mod tests {
     #[test]
     fn fib_0_is_0() {
         let mut env = Env::default();
-        exec(define_fibonacci(), &mut env).unwrap();
+        exec(define_fibonacci(), &mut env, &mut std::io::stdout()).unwrap();
         assert_eq!(Ok(Value::Int(0)), call_fibonacci(0).eval(&env));
     }
 
     #[test]
     fn fib_1_is_1() {
         let mut env = Env::default();
-        exec(define_fibonacci(), &mut env).unwrap();
+        exec(define_fibonacci(), &mut env, &mut std::io::stdout()).unwrap();
         assert_eq!(Ok(Value::Int(1)), call_fibonacci(1).eval(&env));
     }
 
     #[test]
     fn fib_10_is_55() {
         let mut env = Env::default();
-        exec(define_fibonacci(), &mut env).unwrap();
+        exec(define_fibonacci(), &mut env, &mut std::io::stdout()).unwrap();
         assert_eq!(Ok(Value::Int(55)), call_fibonacci(10).eval(&env));
     }
 }

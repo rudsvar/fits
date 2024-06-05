@@ -62,7 +62,7 @@ pub fn typecheck(program: &Program) -> Result<(), TypeError> {
 }
 
 pub fn execute(program: Program) -> Result<(), RuntimeError> {
-    statement::exec(program.stmts, &mut Env::default())
+    statement::exec(program.stmts, &mut Env::default(), &mut std::io::stdout())
 }
 
 pub fn run(input: &str) -> Result<(), Error> {

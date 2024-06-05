@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use leptos::*;
 
 fn main() {
@@ -12,20 +14,54 @@ enum Mode {
     Run,
 }
 
+fn parse_to_string(input: &str) -> Result<String, Box<dyn Error>> {
+    let result = fits::parse(input)
+        .map(|ast| format!("{:#?}", ast))
+        .map_err(|e| e.to_string())?;
+    Ok(result)
+}
+
+fn typecheck_to_string(input: &str) -> Result<String, Box<dyn Error>> {
+    let program = fits::parse(input)?;
+    fits::typecheck(&program)?;
+    Ok("Typecheck successful".to_string())
+}
+
+struct FakeStdout {
+    output: String,
+}
+
+impl std::io::Write for FakeStdout {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.output.push_str(&String::from_utf8_lossy(buf));
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn run_to_string(input: &str) -> Result<String, Box<dyn Error>> {
+    let mut env = fits::env::Env::default();
+    let program = fits::parse(input)?;
+    fits::typecheck(&program)?;
+    let mut output = FakeStdout {
+        output: String::new(),
+    };
+    fits::statement::exec(program.stmts, &mut env, &mut output)?;
+    Ok(output.output)
+}
+
 #[component]
 fn App() -> impl IntoView {
     let (mode, set_mode) = create_signal(Mode::Parse);
-    let (error, set_error) = create_signal(String::new());
     let (input, set_input) = create_signal(String::new());
     let (output, set_output) = create_signal(String::new());
 
     let init = "let person = { name: String, age: Int };";
     set_input(init.to_string());
-    set_output(
-        fits::parse(init)
-            .map(|ast| format!("{:#?}", ast))
-            .unwrap_or_default(),
-    );
+    set_output(parse_to_string(init).expect("Invalid init"));
 
     view! {
         <h1>Fits Playground</h1>
@@ -33,76 +69,20 @@ fn App() -> impl IntoView {
             <textarea
                 on:input=move |ev| {
                     let text = event_target_value(&ev);
-                    match mode.get() {
-                        Mode::Parse => {
-                            match fits::parse(&text) {
-                                Ok(ast) => {
-                                    set_output(format!("{:#?}", ast));
-                                    set_error(String::new());
-                                },
-                                Err(err) => {
-                                    set_error(err.to_string());
-                                    set_output(String::new());
-                                }
-                            }
-                        },
-                        Mode::Type => {
-                            match fits::parse(&text) {
-                                Ok(program) => {
-                                    match fits::typecheck(&program) {
-                                        Ok(()) => {
-                                            set_output("Typecheck successful".to_string());
-                                            set_error(String::new());
-                                        },
-                                        Err(err) => {
-                                            set_error(err.to_string());
-                                            set_output(String::new());
-                                        }
-                                    }
-                                },
-                                Err(err) => {
-                                    set_error(err.to_string());
-                                    set_output(String::new());
-                                }
-                            }
-
-                        },
-                        Mode::Run => {
-                            // Parse, typecheck, execute, and print env
-                            match fits::parse(&text) {
-                                Ok(program) => {
-                                    match fits::typecheck(&program) {
-                                        Ok(()) => {
-                                            let mut env = fits::env::Env::default();
-                                            match fits::statement::exec(program.stmts, &mut env) {
-                                                Ok(()) => {
-                                                    // Pretty-print the environment
-                                                    let env_pretty = env
-                                                        .iter()
-                                                        .map(|(k, v)| format!("{}: {}", k, v))
-                                                        .collect::<Vec<_>>()
-                                                        .join("\n");
-                                                    set_output(env_pretty);
-                                                    set_error(String::new());
-                                                },
-                                                Err(err) => {
-                                                    set_error(err.to_string());
-                                                    set_output(String::new());
-                                                }
-                                            }
-                                        },
-                                        Err(err) => {
-                                            set_error(err.to_string());
-                                            set_output(String::new());
-                                        }
-                                    }
-                                },
-                                Err(err) => {
-                                    set_error(err.to_string());
-                                    set_output(String::new());
-                                }
-                            }
-                        },
+                    let result = match mode.get() {
+                        Mode::Parse => parse_to_string(&text),
+                        Mode::Type => typecheck_to_string(&text),
+                        Mode::Run => run_to_string(&text),
+                    };
+                    match result {
+                        Ok(result) => {
+                            set_input(text);
+                            set_output(result);
+                        }
+                        Err(e) => {
+                            set_input(text);
+                            set_output(e.to_string());
+                        }
                     }
                 }
             >
@@ -113,6 +93,10 @@ fn App() -> impl IntoView {
                     <input type="radio" name="mode" value="parse" checked=true
                         on:input=move |_| {
                             set_mode(Mode::Parse);
+                            match parse_to_string(&input.get()) {
+                                Ok(result) => set_output(result),
+                                Err(e) => set_output(e.to_string()),
+                            }
                         }
                     />
                     <label>"Parse"</label>
@@ -121,6 +105,10 @@ fn App() -> impl IntoView {
                     <input type="radio" name="mode" value="type"
                         on:input=move |_| {
                             set_mode(Mode::Type);
+                            match typecheck_to_string(&input.get()) {
+                                Ok(result) => set_output(result),
+                                Err(e) => set_output(e.to_string()),
+                            }
                         }
                     />
                     <label>"Type"</label>
@@ -129,6 +117,10 @@ fn App() -> impl IntoView {
                     <input type="radio" name="mode" value="run"
                         on:input=move |_| {
                             set_mode(Mode::Run);
+                            match run_to_string(&input.get()) {
+                                Ok(result) => set_output(result),
+                                Err(e) => set_output(e.to_string()),
+                            }
                         }
                     />
                     <label>"Run"</label>
@@ -136,6 +128,5 @@ fn App() -> impl IntoView {
             </form>
             <textarea>{output}</textarea>
         </div>
-        <p style="color: red">{error}</p>
     }
 }

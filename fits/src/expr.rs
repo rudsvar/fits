@@ -2,13 +2,28 @@ use std::fmt::Display;
 
 use crate::{env::Env, record::Record, typecheck::TypeError, value::Value};
 
-#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
     #[error("dynamic type error: {0}")]
     TypeError(#[from] TypeError),
     #[error("assertion error: {0}")]
     AssertionError(String),
+    #[error("io error: {0}")]
+    IoError(#[from] std::io::Error),
 }
+
+impl PartialEq for RuntimeError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (RuntimeError::TypeError(a), RuntimeError::TypeError(b)) => a == b,
+            (RuntimeError::AssertionError(a), RuntimeError::AssertionError(b)) => a == b,
+            (RuntimeError::IoError(a), RuntimeError::IoError(b)) => a.to_string() == b.to_string(),
+            _ => false,
+        }
+    }
+}
+
+impl Eq for RuntimeError {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Function {
