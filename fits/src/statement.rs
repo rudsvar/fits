@@ -1,5 +1,7 @@
 use std::{fmt::Display, io::Write};
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     env::Env,
     expr::{Expr, Function, RuntimeError},
@@ -7,7 +9,7 @@ use crate::{
     value::Value,
 };
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Stmt {
     VarDef(String, Option<String>, Expr),
     Assign(String, Expr),

@@ -4,6 +4,7 @@ use env::Env;
 use expr::{Expr, Function, RuntimeError};
 use parse::ParseError;
 use record::Record;
+use serde::{Deserialize, Serialize};
 use statement::Stmt;
 use tracing_subscriber::EnvFilter;
 use typecheck::TypeError;
@@ -38,7 +39,7 @@ pub fn init_logging() {
     });
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Program {
     pub stmts: Vec<Stmt>,
 }

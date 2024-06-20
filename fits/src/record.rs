@@ -1,7 +1,9 @@
 use std::{collections::BTreeMap, fmt::Display};
 
+use serde::{Deserialize, Serialize};
+
 /// A general record-like structure.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Record<T> {
     pub fields: BTreeMap<String, T>,
 }

@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{env::Env, record::Record, typecheck::TypeError, value::Value};
 
 #[derive(Debug, thiserror::Error)]
@@ -25,7 +27,7 @@ impl PartialEq for RuntimeError {
 
 impl Eq for RuntimeError {}
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Function {
     pub name: String,
     pub params: Vec<(String, String)>,
@@ -43,7 +45,7 @@ impl Display for Function {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Expr {
     // Unit
     Unit,

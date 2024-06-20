@@ -364,6 +364,8 @@ dependencies = [
  "clap",
  "lazy_static",
  "nom",
+ "serde",
+ "serde_json",
  "thiserror",
  "tracing",
  "tracing-subscriber",
@@ -376,6 +378,8 @@ dependencies = [
  "console_error_panic_hook",
  "fits",
  "leptos",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
