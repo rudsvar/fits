@@ -1,21 +1,62 @@
 html {
-    background-color: rgb(232, 233, 233);
-    padding: 1%
+    font-family: Arial, sans-serif;
+    color: white;
+    background-color: #302f2f;
 }
 
-body {
-    background-color: rgb(105, 183, 207);
-    border-radius: 5px;
-    padding: 1%
+.titlebar {
+    color: white;
+    background-color: #333;
+    padding: 5px;
+}
+
+.main {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    color: white;
+    background-color: #302f2f;
+}
+
+.input_and_ast {
+    display: flex;
+    flex-direction: row;
+    gap: 50px;
+    padding: 10px;
 }
 
 textarea {
     width: 450px;
     height: 300px;
-    background-color: rgb(226, 225, 225);
-    border-radius: 3px;
+    color: white;
+    background-color: #5c5c5c;
+    border-radius: 5px;
 }
 
-.block {
-    display: block;
+.error {
+    color: red;
+    min-height: 2em;
+    background-color: #5c5c5c;
+    border-radius: 5px;
+    padding: 5px;
+    margin: 5px;
+}
+
+button {
+    padding: 10px;
+    margin: 5px;
+    border-radius: 5px;
+    background-color: #4CAF50;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.output {
+    display: flex;
+    min-height: 5em;
+    padding: 5px;
+    margin: 5px;
+    border-radius: 5px;
+    background-color: #747474;
 }

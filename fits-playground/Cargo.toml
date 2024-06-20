@@ -7,3 +7,5 @@ edition = "2021"
 console_error_panic_hook = "0.1.7"
 fits = { path = "../fits" }
 leptos = { version = "0.6.11", features = ["csr", "nightly"] }
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.117"

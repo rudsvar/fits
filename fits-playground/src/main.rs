@@ -7,26 +7,6 @@ fn main() {
     leptos::mount_to_body(|| view! { <App/> })
 }
 
-#[derive(Clone, Copy, Debug)]
-enum Mode {
-    Parse,
-    Type,
-    Run,
-}
-
-fn parse_to_string(input: &str) -> Result<String, Box<dyn Error>> {
-    let result = fits::parse(input)
-        .map(|ast| format!("{:#?}", ast))
-        .map_err(|e| e.to_string())?;
-    Ok(result)
-}
-
-fn typecheck_to_string(input: &str) -> Result<String, Box<dyn Error>> {
-    let program = fits::parse(input)?;
-    fits::typecheck(&program)?;
-    Ok("Typecheck successful".to_string())
-}
-
 struct FakeStdout {
     output: String,
 }
@@ -55,77 +35,82 @@ fn run_to_string(input: &str) -> Result<String, Box<dyn Error>> {
 
 #[component]
 fn App() -> impl IntoView {
-    let (mode, set_mode) = create_signal(Mode::Parse);
-    let (input, set_input) = create_signal(String::new());
+    let init = "let person = { name: \"Hello\", age: 3 };\nprintln(person);";
+    let (input, set_input) = create_signal(init.to_string());
+    let (ast, set_ast) = create_signal(fits::parse(init).unwrap());
     let (output, set_output) = create_signal(String::new());
-
-    let init = "let person = { name: String, age: Int };";
-    set_input(init.to_string());
-    set_output(parse_to_string(init).expect("Invalid init"));
+    let (error, set_error) = create_signal(String::new());
 
     view! {
-        <h1>Fits Playground</h1>
-        <div style="display: flex; gap: 20px;">
-            <textarea
-                on:input=move |ev| {
-                    let text = event_target_value(&ev);
-                    let result = match mode.get() {
-                        Mode::Parse => parse_to_string(&text),
-                        Mode::Type => typecheck_to_string(&text),
-                        Mode::Run => run_to_string(&text),
-                    };
-                    match result {
+        <div class="titlebar">
+            <h1>Fits Playground</h1>
+        </div>
+        <div class="main">
+            <div class="input_and_ast">
+                <div class="input">
+                    <h3>Input</h3>
+                    <textarea
+                        on:input=move |ev| {
+                            let text = event_target_value(&ev);
+                            set_input(text.clone());
+                            match fits::parse(&text) {
+                                Ok(ast) => {
+                                    set_ast(ast);
+                                    set_error("".to_string());
+                                }
+                                Err(e) => {
+                                    set_error(e.to_string());
+                                }
+                            }
+                        }
+                    >
+                    {input}
+                    </textarea>
+                </div>
+                <div class="ast">
+                    <h3>AST</h3>
+                    <textarea
+                        on:input=move |ev| {
+                            let text = event_target_value(&ev).clone();
+                            match serde_json::from_str::<fits::Program>(&text) {
+                                Ok(ast) => {
+                                    set_input(ast.to_string());
+                                    set_ast(ast);
+                                    set_error("".to_string());
+                                }
+                                Err(e) => {
+                                    set_error(e.to_string());
+                                }
+                            }
+                        }
+                    >
+                    {move || serde_json::to_string_pretty(&ast).unwrap()}
+                    </textarea>
+                </div>
+            </div>
+            <div class="error">
+                {error}
+            </div>
+            <div class="run">
+                <button type="button" name="mode" value="Run"
+                    on:click=move |_|
+                    match run_to_string(&input.get()) {
                         Ok(result) => {
-                            set_input(text);
+                            set_error("".to_string());
                             set_output(result);
                         }
                         Err(e) => {
-                            set_input(text);
-                            set_output(e.to_string());
+                            set_error(e.to_string());
                         }
                     }
-                }
-            >
-            </textarea>
-            <form class="buttons" style="display: flex; flex-direction: column">
-                <div>
-                    <input type="radio" name="mode" value="parse" checked=true
-                        on:input=move |_| {
-                            set_mode(Mode::Parse);
-                            match parse_to_string(&input.get()) {
-                                Ok(result) => set_output(result),
-                                Err(e) => set_output(e.to_string()),
-                            }
-                        }
-                    />
-                    <label>"Parse"</label>
-                </div>
-                <div>
-                    <input type="radio" name="mode" value="type"
-                        on:input=move |_| {
-                            set_mode(Mode::Type);
-                            match typecheck_to_string(&input.get()) {
-                                Ok(result) => set_output(result),
-                                Err(e) => set_output(e.to_string()),
-                            }
-                        }
-                    />
-                    <label>"Type"</label>
-                </div>
-                <div>
-                    <input type="radio" name="mode" value="run"
-                        on:input=move |_| {
-                            set_mode(Mode::Run);
-                            match run_to_string(&input.get()) {
-                                Ok(result) => set_output(result),
-                                Err(e) => set_output(e.to_string()),
-                            }
-                        }
-                    />
-                    <label>"Run"</label>
-                </div>
-            </form>
-            <textarea>{output}</textarea>
+                >
+                Run
+                </button>
+            </div>
+            <h2>Output</h2>
+            <div class="output">
+                {output}
+            </div>
         </div>
     }
 }
