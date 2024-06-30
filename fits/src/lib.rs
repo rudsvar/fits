@@ -12,6 +12,7 @@ use value::Value;
 
 pub mod env;
 pub mod expr;
+pub mod lambda_calculus;
 pub mod parse;
 pub mod parse2;
 pub mod record;
