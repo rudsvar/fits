@@ -13,6 +13,7 @@ use tracing::debug;
 pub enum Expr {
     Unit,
     Int(i32),
+    Sum(Vec<Expr>),
     Var(String),
     Abs(String, Box<Expr>),
     App(Box<Expr>, Box<Expr>),
@@ -23,6 +24,17 @@ impl Display for Expr {
         match self {
             Expr::Unit => write!(f, "()"),
             Expr::Int(i) => write!(f, "{}", i),
+            Expr::Sum(addends) => {
+                write!(
+                    f,
+                    "+ {}",
+                    addends
+                        .iter()
+                        .map(|a| a.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )
+            }
             Expr::Var(v) => write!(f, "{}", v),
             Expr::Abs(v, e) => write!(f, "(\\{}. {})", v, e),
             Expr::App(abs, e) => write!(f, "({} {})", abs, e),
@@ -33,12 +45,12 @@ impl Display for Expr {
 fn parser() -> impl Parser<char, Expr, Error = Simple<char>> {
     recursive(|p| {
         let unit = just("()").to(Expr::Unit);
-        let int = choice((just("+"), just("-"))).or_not().then_with(|sign| {
+        let int = just("-").or_not().then_with(|sign| {
             chumsky::text::int(10).map(move |s: String| {
-                let n = s.parse().unwrap();
+                let n: i32 = s.parse().unwrap();
                 match sign {
-                    Some("+") | None => Expr::Int(n),
                     Some("-") => Expr::Int(-n),
+                    None => Expr::Int(n),
                     _ => unreachable!(),
                 }
             })
@@ -50,7 +62,21 @@ fn parser() -> impl Parser<char, Expr, Error = Simple<char>> {
             .then_ignore(just(".").padded())
             .then(p.clone())
             .map(|(v, e)| Expr::Abs(v, Box::new(e)));
-        let atom = choice((unit, int, var, abs, p.delimited_by(just("("), just(")")))).padded();
+        let atom = recursive(|atom| {
+            let sum = just("+")
+                .padded()
+                .ignore_then(atom.clone().padded().repeated())
+                .map(Expr::Sum);
+            choice((
+                unit,
+                int,
+                sum,
+                var,
+                abs,
+                p.delimited_by(just("("), just(")")),
+            ))
+            .padded()
+        });
 
         atom.clone()
             .then(whitespace().ignore_then(atom).repeated())
@@ -94,6 +120,17 @@ pub fn beta_reduce_with(e: Expr, depth: usize) -> Expr {
         }
         Expr::Unit => Expr::Unit,
         Expr::Int(i) => Expr::Int(i),
+        Expr::Sum(addends) => {
+            let mut sum = 0;
+            for addend in addends {
+                if let Expr::Int(i) = addend {
+                    sum += i;
+                } else {
+                    panic!("{indent}{addend} must be an integer");
+                }
+            }
+            Expr::Int(sum)
+        }
     };
     debug!("{indent}}} => {e:?}");
     e
@@ -233,5 +270,11 @@ mod tests {
             ).unwrap())
             .to_string()
         );
+    }
+
+    #[test]
+    fn sum() {
+        assert_eq!(Expr::Int(6), beta_reduce(parse("+ 1 2 3").unwrap()));
+        assert_eq!(Expr::Int(0), beta_reduce(parse("+ 1 2 (-3)").unwrap()));
     }
 }
