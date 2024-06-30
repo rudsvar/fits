@@ -42,9 +42,7 @@ fn App() -> impl IntoView {
     let (error, set_error) = create_signal(String::new());
 
     view! {
-        <div class="titlebar">
-            <h1>Fits Playground</h1>
-        </div>
+        <h1>Programming Languages Playground</h1>
         <div class="main">
             <div class="input_and_ast">
                 <div class="input">

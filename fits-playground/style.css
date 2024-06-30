@@ -4,10 +4,15 @@ html {
     background-color: #302f2f;
 }
 
-.titlebar {
-    color: white;
-    background-color: #333;
-    padding: 5px;
+body {
+    margin: 0;
+    padding: 0;
+}
+
+h1 {
+    margin: 0px;
+    padding: 10px;
+    background-color: #222;
 }
 
 .main {
@@ -15,7 +20,6 @@ html {
     flex-direction: column;
     gap: 20px;
     color: white;
-    background-color: #302f2f;
 }
 
 .input_and_ast {
